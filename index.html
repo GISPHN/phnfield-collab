@@ -2,267 +2,316 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>PHN Field Collab – サーバ不要・共同編集＋URL共有</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PHN Field Collab – 共同編集＋URL共有（サーバ不要）</title>
 
   <!-- MapLibre -->
-  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet"/>
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
   <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
 
-  <!-- Terra Draw (描画) -->
-  <script src="https://cdn.jsdelivr.net/npm/terra-draw@1.3.5/dist/terra-draw.umd.js"></script>
+  <!-- Mapbox GL Draw（MapLibreで動作）-->
+  <link href="https://cdn.jsdelivr.net/npm/@mapbox/mapbox-gl-draw@1.4.3/dist/mapbox-gl-draw.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/@mapbox/mapbox-gl-draw@1.4.3/dist/mapbox-gl-draw.js"></script>
 
-  <!-- Yjs + y-webrtc（P2P同期／サーバ不要） -->
+  <!-- 形状作成用（円ポリゴン生成など）-->
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+
+  <!-- Yjs + y-webrtc（UMDグローバル名：Y / ywebrtc）-->
   <script src="https://cdn.jsdelivr.net/npm/yjs@13.6.18/dist/yjs.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/y-webrtc@10.6.3/dist/y-webrtc.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/y-webrtc@10.6.3/dist/y-webrtc.min.js"></script>
 
-  <!-- LZ-String（URL圧縮） -->
+  <!-- URL圧縮 -->
   <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
 
   <style>
-    html, body { height:100%; margin:0; font-family:system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-    .toolbar{
-      display:flex; gap:.5rem; padding:.5rem .75rem; border-bottom:1px solid #e5e7eb;
-      background:#f9fafb; align-items:center; flex-wrap:wrap;
+    :root {
+      --bg:#f8fafc; --line:#e5e7eb; --text:#0f172a; --muted:#64748b; --accent:#2563eb;
     }
-    .toolbar .right{ margin-left:auto; display:flex; gap:.5rem; align-items:center; }
-    .badge{ font-size:.8rem; padding:.2rem .55rem; border-radius:999px; border:1px solid #d1d5db; background:#fff; }
-    button{ padding:.45rem .7rem; border:1px solid #cbd5e1; background:#fff; border-radius:.6rem; cursor:pointer; }
-    button:disabled{ opacity:.5; cursor:not-allowed; }
-    #map{ position:absolute; inset:48px 0 0 0; }
-    .sep{ width:1px; height:28px; background:#e5e7eb; margin:0 .25rem; }
+    html,body { height:100%; margin:0; font-family:system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:var(--text); }
+    #topbar {
+      display:flex; align-items:center; gap:.5rem; padding:.6rem .75rem;
+      border-bottom:1px solid var(--line); background:var(--bg); position:relative; z-index:2;
+      flex-wrap:wrap;
+    }
+    #brand { font-weight:700; }
+    .muted { color:var(--muted); font-size:.9rem; }
+    #map { position:absolute; inset:64px 0 0 0; }
+    .btn {
+      padding:.5rem .75rem; border:1px solid var(--line); border-radius:.6rem; background:white;
+      cursor:pointer; font-size:.95rem;
+    }
+    .btn.active { border-color:var(--accent); box-shadow:0 0 0 2px rgba(37,99,235,.15) inset; }
+    .btn:disabled { opacity:.5; cursor:not-allowed; }
+    #right { margin-left:auto; display:flex; align-items:center; gap:.5rem; }
+    .badge { font-size:.82rem; padding:.2rem .55rem; border:1px solid var(--line); border-radius:999px; background:white; }
+    #help {
+      position:absolute; left:12px; bottom:12px; background:white; border:1px solid var(--line);
+      border-radius:.75rem; padding:.6rem .75rem; font-size:.9rem; color:var(--muted); z-index:1;
+    }
+    #err {
+      display:none; position:fixed; left:12px; top:68px; background:#fee2e2; color:#7f1d1d;
+      border:1px solid #fecaca; border-radius:.5rem; padding:.5rem .75rem; z-index:3;
+    }
+    .sep { width:1px; height:28px; background:var(--line); margin:0 .25rem; }
+    @media (max-width:768px){ #map{ inset:100px 0 0 0; } }
   </style>
 </head>
 <body>
-  <div class="toolbar">
-    <strong>PHN Field Collab</strong>
-    <span style="color:#64748b;font-size:.85rem">#room と #editorKey をURLハッシュで指定（例：#room=nara-demo&editorKey=abc123）</span>
+  <div id="topbar">
+    <span id="brand">PHN Field Collab</span>
+    <span class="muted">#room と #editorKey をURLハッシュで指定（例：#room=nara-demo&editorKey=abc123）</span>
     <div class="sep"></div>
 
-    <!-- ベースマップ切替 -->
-    <span style="font-size:.9rem">地図:</span>
-    <button id="bm-osm">OSM標準</button>
-    <button id="bm-gsi-std">地理院 標準</button>
-    <button id="bm-gsi-photo">地理院 全国最新写真</button>
+    <!-- Basemap -->
+    <span class="muted">地図:</span>
+    <button class="btn" id="bm-osm">OSM標準</button>
+    <button class="btn" id="bm-gsi-std">地理院 標準</button>
+    <button class="btn" id="bm-gsi-photo">地理院 全国最新写真</button>
+
     <div class="sep"></div>
 
-    <!-- 描画 -->
-    <button id="btn-select">選択</button>
-    <button id="btn-point">ポイント</button>
-    <button id="btn-line">ライン</button>
-    <button id="btn-polygon">ポリゴン</button>
-    <button id="btn-circle">円</button>
-    <button id="btn-delete" title="選択削除 / 長押しで全削除">削除</button>
+    <!-- Drawing -->
+    <button class="btn" id="tool-select">選択</button>
+    <button class="btn" id="tool-point">ポイント</button>
+    <button class="btn" id="tool-line">ライン</button>
+    <button class="btn" id="tool-poly">ポリゴン</button>
+    <button class="btn" id="tool-circle">円</button>
+    <button class="btn" id="tool-delete" title="選択削除 / 長押しで全削除">削除</button>
 
-    <div class="right">
-      <button id="btn-share">見たままURLをコピー</button>
-      <span id="role-badge" class="badge">読み取り専用</span>
+    <div id="right">
+      <button class="btn" id="btn-share">見たままURLをコピー</button>
+      <span class="badge" id="role-badge">読み取り専用</span>
     </div>
   </div>
+
   <div id="map"></div>
+  <div id="help">①地図を選ぶ → ②「ポイント/ライン/ポリゴン/円」で描く → ③「見たままURL」を配布。<br/>編集は editorKey を持つ人のみ。</div>
+  <div id="err"></div>
 
   <script>
-    // ===== 1) URLハッシュ
+  (function(){
+    const showErr = (msg)=>{
+      const el = document.getElementById('err');
+      el.textContent = msg;
+      el.style.display = 'block';
+      console.error(msg);
+    };
+
+    // ===== URL ハッシュ =====
     const H = new URLSearchParams(location.hash.slice(1));
     const ROOM_ID    = H.get('room') || 'phnfield-default';
-    const EDITOR_KEY = H.get('editorKey');
+    const EDITOR_KEY = H.get('editorKey') || '';
     const READ_ONLY  = !EDITOR_KEY;
-    document.getElementById('role-badge').textContent = READ_ONLY ? '閲覧専用' : '編集可';
+    const roleBadge  = document.getElementById('role-badge');
+    roleBadge.textContent = READ_ONLY ? '閲覧専用' : '編集可';
 
-    // ===== 2) Yjs（P2P）
-    const ydoc      = new Y.Doc();
-    const provider  = new Y.WebrtcProvider(ROOM_ID, ydoc);
-    const yFeatures = ydoc.getArray('features'); // GeoJSON Feature[]
-    const yMapState = ydoc.getMap('mapState');   // {center, zoom, bearing, pitch}
+    // ===== MapLibre（空スタイル → ラスタを自前追加）=====
+    const EMPTY_STYLE = { version:8, sources:{}, layers:[], glyphs:"https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf" };
+    let map;
+    try {
+      map = new maplibregl.Map({
+        container:'map',
+        style: EMPTY_STYLE,
+        center:[135.79, 34.51], // 橿原市近辺
+        zoom:8.2,
+        pitch:0, bearing:0
+      });
+    } catch(e) {
+      showErr('MapLibreの初期化に失敗しました: '+e.message);
+      return;
+    }
 
-    // ===== 3) MapLibre スタイル（空のスタイルにラスタを追加）
-    const EMPTY_STYLE = {
-      "version": 8,
-      "sources": {},
-      "layers": [],
-      "sprite": undefined,
-      "glyphs": "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf"
-    };
-    const map = new maplibregl.Map({
-      container: 'map',
-      style: EMPTY_STYLE,
-      center: [135.79, 34.51], // 橿原市付近（フォールバック）
-      zoom: 8.2,               // 奈良県全景目安
-      pitch: 0, bearing: 0
-    });
-
-    // 位置ボタン & ズーム
+    map.addControl(new maplibregl.NavigationControl({showZoom:true}), 'top-right');
     map.addControl(new maplibregl.GeolocateControl({
-      positionOptions: { enableHighAccuracy: true },
-      trackUserLocation: true, showUserHeading: true
+      positionOptions:{ enableHighAccuracy:true },
+      trackUserLocation:true, showUserHeading:true
     }));
-    map.addControl(new maplibregl.NavigationControl({ showZoom: true }), 'top-right');
 
-    // ===== 3-1) ベースマップSources/Layers
-    function ensureBaseSources() {
+    // ベースマップ
+    function addBasemapSources() {
       if (!map.getSource('osm')) {
-        map.addSource('osm', {
-          type: 'raster',
-          tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-          tileSize: 256,
-          attribution: '© OpenStreetMap contributors'
-        });
+        map.addSource('osm', { type:'raster', tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize:256,
+          attribution:'© OpenStreetMap contributors' });
       }
       if (!map.getSource('gsi-std')) {
-        map.addSource('gsi-std', {
-          type: 'raster',
-          tiles: ['https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png'],
-          tileSize: 256,
-          attribution: '地理院タイル'
-        });
+        map.addSource('gsi-std', { type:'raster', tiles:['https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png'], tileSize:256,
+          attribution:'地理院タイル（標準）' });
       }
       if (!map.getSource('gsi-photo')) {
-        map.addSource('gsi-photo', {
-          type: 'raster',
-          tiles: ['https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg'],
-          tileSize: 256,
-          attribution: '地理院タイル（全国最新写真）'
+        map.addSource('gsi-photo', { type:'raster', tiles:['https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg'], tileSize:256,
+          attribution:'地理院タイル（全国最新写真）' });
+      }
+      if (!map.getLayer('bm-osm'))      map.addLayer({ id:'bm-osm',      type:'raster', source:'osm' });
+      if (!map.getLayer('bm-gsi-std'))  map.addLayer({ id:'bm-gsi-std',  type:'raster', source:'gsi-std' });
+      if (!map.getLayer('bm-gsi-photo'))map.addLayer({ id:'bm-gsi-photo',type:'raster', source:'gsi-photo' });
+    }
+    function showBasemap(id){
+      ['bm-osm','bm-gsi-std','bm-gsi-photo'].forEach(l=>{
+        if(map.getLayer(l)) map.setLayoutProperty(l,'visibility', l===id?'visible':'none');
+      });
+      // ボタンのアクティブ表示
+      [['bm-osm','bm-osm'],['bm-gsi-std','bm-gsi-std'],['bm-gsi-photo','bm-gsi-photo']]
+        .forEach(([lid,btnid])=>{
+          const btn = document.getElementById(btnid.replace('bm-','bm-'));
         });
-      }
-      if (!map.getLayer('bm-osm')) {
-        map.addLayer({ id:'bm-osm', type:'raster', source:'osm' });
-      }
-      if (!map.getLayer('bm-gsi-std')) {
-        map.addLayer({ id:'bm-gsi-std', type:'raster', source:'gsi-std' });
-      }
-      if (!map.getLayer('bm-gsi-photo')) {
-        map.addLayer({ id:'bm-gsi-photo', type:'raster', source:'gsi-photo' });
-      }
     }
-    function showBase(idShow){
-      ['bm-osm','bm-gsi-std','bm-gsi-photo'].forEach(id=>{
-        if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', id===idShow?'visible':'none');
-      });
-    }
-    map.on('load', () => {
-      ensureBaseSources();
-      showBase('bm-osm'); // 初期はOSM
-    });
-
-    // ===== 3-2) 現在地を初期表示に（失敗時は奈良県橿原市）
-    function fitNaraFallback(){
-      map.jumpTo({ center:[135.79,34.51], zoom:8.2 });
-    }
-    // 一度だけ現在地に飛ぶ
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos)=>{
-          const lng = pos.coords.longitude;
-          const lat = pos.coords.latitude;
-          map.jumpTo({ center:[lng,lat], zoom:14 });
-        },
-        (_err)=>{ fitNaraFallback(); },
-        { enableHighAccuracy:true, timeout:7000, maximumAge:0 }
-      );
-    } else {
-      fitNaraFallback();
-    }
-
-    // ===== 4) Terra Draw（描画）
-    const draw = new TerraDraw({
-      adapter: new TerraDrawMapLibreGLAdapter({ map }),
-      modes: [
-        new TerraDrawSelectMode(),
-        new TerraDrawPointMode(),
-        new TerraDrawLineStringMode(),
-        new TerraDrawPolygonMode(),
-        new TerraDrawCircleMode()
-      ],
-      styles:{
-        selected:{ polygonFillOpacity:0.2, lineStringWidth:3 },
-        polygon:{ polygonFillOpacity:0.15, lineStringWidth:2 },
-        point:{ pointWidth:8, pointOutlineWidth:2 }
-      }
-    });
-    draw.start();
-
-    // ボタン
-    const $ = (id)=>document.getElementById(id);
-    $('btn-select').onclick  = ()=>{ if(!READ_ONLY) draw.setMode('select'); };
-    $('btn-point').onclick   = ()=>{ if(!READ_ONLY) draw.setMode('point'); };
-    $('btn-line').onclick    = ()=>{ if(!READ_ONLY) draw.setMode('linestring'); };
-    $('btn-polygon').onclick = ()=>{ if(!READ_ONLY) draw.setMode('polygon'); };
-    $('btn-circle').onclick  = ()=>{ if(!READ_ONLY) draw.setMode('circle'); };
-    $('btn-delete').onclick  = ()=>{
-      if(READ_ONLY) return;
-      if (draw.getSelectedIds && draw.getSelectedIds().length) {
-        draw.deleteSelected();
-      } else if (confirm('すべての描画を削除します。よろしいですか？')) {
-        draw.deleteAll(); pushFeatures();
-      }
-    };
-    // 閲覧専用UI
-    if (READ_ONLY){
-      ['btn-select','btn-point','btn-line','btn-polygon','btn-circle','btn-delete'].forEach(id=>$(id).disabled=true);
-      draw.setMode('select');
-    }
-
-    // ===== 5) 双方向同期（地図⇄Yjs／描画⇄Yjs）
-    function pushMapState(){
-      if (READ_ONLY) return;
-      const c = map.getCenter();
-      yMapState.set('center',[c.lng,c.lat]);
-      yMapState.set('zoom',map.getZoom());
-      yMapState.set('bearing',map.getBearing());
-      yMapState.set('pitch',map.getPitch());
-    }
-    map.on('moveend', pushMapState);
-
-    yMapState.observe(()=>{
-      const center  = yMapState.get('center');
-      const zoom    = yMapState.get('zoom');
-      const bearing = yMapState.get('bearing')||0;
-      const pitch   = yMapState.get('pitch')||0;
-      if(center && typeof zoom==='number'){
-        map.jumpTo({ center, zoom, bearing, pitch });
-      }
-    });
-
-    function pushFeatures(){
-      if (READ_ONLY) return;
-      const fc = draw.getAll ? draw.getAll() : { type:'FeatureCollection', features:[] };
-      const feats = fc.features || [];
-      ydoc.transact(()=>{
-        yFeatures.delete(0, yFeatures.length);
-        feats.forEach(f=>yFeatures.push([f]));
-      });
-    }
-    draw.on('create', pushFeatures);
-    draw.on('update', pushFeatures);
-    draw.on('delete', pushFeatures);
-
-    function applyFeaturesFromY(){
-      const feats = yFeatures.toArray();
-      if (draw.deleteAll) draw.deleteAll();
-      if (draw.addFeatures) draw.addFeatures(feats);
-      else if (draw.add) feats.forEach(f=>draw.add(f));
-    }
-    yFeatures.observeDeep(applyFeaturesFromY);
 
     map.on('load', ()=>{
-      if (yMapState.size===0) pushMapState();
-      if (yFeatures.length>0) applyFeaturesFromY();
+      addBasemapSources();
+      showBasemap('bm-osm'); // 既定はOSM
+      // 位置取得（失敗時は奈良県）
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          pos => map.jumpTo({ center:[pos.coords.longitude, pos.coords.latitude], zoom:14 }),
+          _ => map.jumpTo({ center:[135.79,34.51], zoom:8.2 }),
+          { enableHighAccuracy:true, timeout:7000, maximumAge:0 }
+        );
+      } else {
+        map.jumpTo({ center:[135.79,34.51], zoom:8.2 });
+      }
     });
 
-    // ===== 6) 見たままURL（stateをハッシュへ圧縮）
+    // ボタンで切替
+    document.getElementById('bm-osm').onclick      = ()=> showBasemap('bm-osm');
+    document.getElementById('bm-gsi-std').onclick  = ()=> showBasemap('bm-gsi-std');
+    document.getElementById('bm-gsi-photo').onclick= ()=> showBasemap('bm-gsi-photo');
+
+    // ===== Draw（UMDグローバル：MapboxDraw）=====
+    let draw;
+    try {
+      draw = new MapboxDraw({ displayControlsDefault:false });
+      map.addControl(draw, 'top-left');
+    } catch(e) {
+      showErr('描画ライブラリの初期化に失敗: '+e.message);
+    }
+
+    // アクティブツール表示
+    const toolBtns = ['tool-select','tool-point','tool-line','tool-poly','tool-circle'];
+    const setActiveBtn = (id) => {
+      toolBtns.forEach(b => document.getElementById(b).classList.toggle('active', b===id));
+    };
+
+    // ツール切替
+    const READONLY_MSG = '閲覧専用リンクです（editorKeyが無い）。編集するには editorKey を付けて開いてください。';
+    function guardEdit(action){
+      if (READ_ONLY){ alert(READONLY_MSG); return false; }
+      if (!draw){ showErr('描画が利用できません'); return false; }
+      action && action(); return true;
+    }
+
+    document.getElementById('tool-select').onclick = ()=> guardEdit(()=>{ draw.changeMode('simple_select'); setActiveBtn('tool-select'); });
+    document.getElementById('tool-point').onclick  = ()=> guardEdit(()=>{ draw.changeMode('draw_point'); setActiveBtn('tool-point'); });
+    document.getElementById('tool-line').onclick   = ()=> guardEdit(()=>{ draw.changeMode('draw_line_string'); setActiveBtn('tool-line'); });
+    document.getElementById('tool-poly').onclick   = ()=> guardEdit(()=>{ draw.changeMode('draw_polygon'); setActiveBtn('tool-poly'); });
+
+    // 円：半径を聞いてからクリックした地点に円を生成
+    let circleArmed = false; let circleRadiusM = 100;
+    document.getElementById('tool-circle').onclick = ()=> guardEdit(()=>{
+      const v = prompt('円の半径（メートル）を入力してください', String(circleRadiusM));
+      if (v===null) return;
+      const r = Number(v);
+      if (!(r>0)) { alert('正の数値を入力してください'); return; }
+      circleRadiusM = r; circleArmed = true; setActiveBtn('tool-circle');
+      alert('地図を1回クリックすると、その地点を中心に円を描きます。');
+      draw.changeMode('simple_select');
+    });
+    map.on('click', (e)=>{
+      if (!circleArmed || READ_ONLY || !draw) return;
+      const center = [e.lngLat.lng, e.lngLat.lat];
+      const poly = turf.circle(center, circleRadiusM/1000, {steps:64, units:'kilometers'});
+      try { draw.add(poly); pushFeatures(); } catch(err){ showErr('円の追加に失敗:'+err.message); }
+      circleArmed = false; setActiveBtn('tool-select');
+    });
+
+    // 削除ボタン
+    const delBtn = document.getElementById('tool-delete');
+    delBtn.onmousedown = ()=>{}; // for long-press hint
+    delBtn.onclick = ()=> guardEdit(()=>{
+      const sel = draw.getSelectedIds();
+      if (sel.length) {
+        sel.forEach(id=>draw.delete(id));
+      } else if (confirm('すべての描画を削除します。よろしいですか？')) {
+        draw.deleteAll();
+      }
+      pushFeatures();
+    });
+
+    // ===== Yjs 同期（UMD名注意：ywebrtc）=====
+    const hasY = !!(window.Y && window.ywebrtc);
+    const ydoc = hasY ? new Y.Doc() : null;
+    const provider = hasY ? new ywebrtc.WebrtcProvider(ROOM_ID, ydoc) : null;
+    const yFeatures = hasY ? ydoc.getArray('features') : null;
+    const yMapState = hasY ? ydoc.getMap('mapState')   : null;
+
+    if (!hasY) {
+      // 共同編集なしでも使えるようフォールバック
+      showErr('Yjs/y-webrtc が読み込めなかったため、今回は「ローカル編集」のみで動作します。CDNブロック等をご確認ください。');
+    }
+
+    let applyingFromY = false;
+
+    function pushFeatures(){
+      if (READ_ONLY || !hasY || applyingFromY || !draw) return;
+      const feats = draw.getAll().features || [];
+      ydoc.transact(()=>{
+        yFeatures.delete(0, yFeatures.length);
+        feats.forEach(f=> yFeatures.push([f]));
+      });
+    }
+    if (draw) {
+      map.on('draw.create',  pushFeatures);
+      map.on('draw.update',  pushFeatures);
+      map.on('draw.delete',  pushFeatures);
+      map.on('draw.combine', pushFeatures);
+      map.on('draw.uncombine', pushFeatures);
+    }
+
+    if (hasY){
+      yFeatures.observeDeep(()=>{
+        applyingFromY = true;
+        try{
+          if (draw){
+            draw.deleteAll();
+            const feats = yFeatures.toArray();
+            feats.forEach(f=> draw.add(f));
+          }
+        } finally { applyingFromY = false; }
+      });
+
+      // 地図中心同期
+      function pushMapState(){
+        if (READ_ONLY) return;
+        const c = map.getCenter();
+        yMapState.set('center',[c.lng, c.lat]);
+        yMapState.set('zoom', map.getZoom());
+        yMapState.set('bearing', map.getBearing());
+        yMapState.set('pitch', map.getPitch());
+      }
+      map.on('moveend', ()=>{ if(hasY) pushMapState(); });
+
+      yMapState.observe(()=>{
+        const center  = yMapState.get('center');
+        const zoom    = yMapState.get('zoom');
+        const bearing = yMapState.get('bearing')||0;
+        const pitch   = yMapState.get('pitch')||0;
+        if(center && typeof zoom==='number'){
+          map.jumpTo({ center, zoom, bearing, pitch });
+        }
+      });
+    }
+
+    // ===== URL共有（state をハッシュへ圧縮）=====
     function exportStateToURL(){
       const c = map.getCenter();
-      const fc = draw.getAll ? draw.getAll() : { type:'FeatureCollection', features:[] };
       const state = {
         center:[c.lng, c.lat],
         zoom: map.getZoom(),
         bearing: map.getBearing(),
         pitch: map.getPitch(),
-        features: fc.features || []
+        features: draw ? (draw.getAll().features||[]) : []
       };
-      const json   = JSON.stringify(state);
-      const packed = LZString.compressToEncodedURIComponent(json);
-      const base   = location.origin + location.pathname;
+      const packed = LZString.compressToEncodedURIComponent(JSON.stringify(state));
+      const base = location.origin + location.pathname;
       const q = new URLSearchParams(location.hash.slice(1));
       q.set('state', packed);
       return `${base}#${q.toString()}`;
@@ -273,41 +322,27 @@
       const json = LZString.decompressFromEncodedURIComponent(packed);
       if(!json) return false;
       const s = JSON.parse(json);
-      if (s.center && typeof s.zoom==='number'){
+      if (s.center && typeof s.zoom==='number') {
         map.jumpTo({ center:s.center, zoom:s.zoom, bearing:s.bearing||0, pitch:s.pitch||0 });
       }
-      if (s.features && s.features.length){
-        if (draw.deleteAll) draw.deleteAll();
-        if (draw.addFeatures) draw.addFeatures(s.features);
-        else if (draw.add) s.features.forEach(f=>draw.add(f));
+      if (draw && s.features && s.features.length){
+        draw.deleteAll();
+        s.features.forEach(f=> draw.add(f));
       }
       return true;
     }
     document.getElementById('btn-share').onclick = async ()=>{
       const url = exportStateToURL();
       try { await navigator.clipboard.writeText(url); alert('共有URLをコピーしました:\n'+url); }
-      catch { prompt('コピーできない場合は手動でコピーしてください', url); }
+      catch { prompt('コピーできない場合は、このURLを手動でコピーしてください', url); }
     };
     importStateFromURL();
 
-    // ===== 7) ローカル保存（オフライン耐性）
-    window.addEventListener('beforeunload', ()=>{
-      try{
-        const dump = Y.encodeStateAsUpdate(ydoc);
-        localStorage.setItem('phnfield:'+ROOM_ID, Array.from(dump).join(','));
-      }catch(e){}
-    });
-    (function restoreLocal(){
-      const raw = localStorage.getItem('phnfield:'+ROOM_ID);
-      if(!raw) return;
-      const bytes = new Uint8Array(raw.split(',').map(n=>Number(n)));
-      Y.applyUpdate(ydoc, bytes);
-    })();
+    // ===== 使い始めの体験を向上 =====
+    // 初期ツール：選択
+    document.getElementById('tool-select').click();
 
-    // ===== 8) ベースマップ切替ボタン
-    document.getElementById('bm-osm').onclick      = ()=> showBase('bm-osm');
-    document.getElementById('bm-gsi-std').onclick  = ()=> showBase('bm-gsi-std');
-    document.getElementById('bm-gsi-photo').onclick= ()=> showBase('bm-gsi-photo');
+  })();
   </script>
 </body>
 </html>
