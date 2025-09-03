@@ -13,7 +13,7 @@
 <link href="https://cdn.jsdelivr.net/npm/@mapbox/mapbox-gl-draw@1.4.3/dist/mapbox-gl-draw.css" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/@mapbox/mapbox-gl-draw@1.4.3/dist/mapbox-gl-draw.js"></script>
 
-<!-- Turf（幾何/円作図/重心/バウンディングボックス等） -->
+<!-- Turf（幾何/円作図等） -->
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
 
 <!-- EXIF 解析（GPS抽出） -->
@@ -62,7 +62,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
 <body>
 <div id="topbar">
   <span id="brand">PHN Field Collab</span>
-  <span class="muted">「部屋」「編集リンク」はボタンで自動発行（短いURL）</span>
+  <span class="muted">ボタンで短い room / editorKey を自動発行（短いURL）</span>
   <div class="sep"></div>
 
   <!-- Basemap -->
@@ -70,9 +70,11 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   <button class="btn" id="bm-osm">OSM</button>
   <button class="btn" id="bm-gsi-std">地理院 標準</button>
   <button class="btn" id="bm-gsi-photo">地理院 写真</button>
+
   <div class="sep"></div>
 
   <!-- Tools -->
+  <button class="btn" id="tool-select">選択</button>
   <button class="btn" id="tool-pin">ピン</button>
   <button class="btn" id="tool-line">ライン</button>
   <button class="btn" id="tool-poly">ポリゴン</button>
@@ -80,6 +82,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   <button class="btn" id="tool-delete" title="選択削除 / 長押しで全削除">削除</button>
   <button class="btn" id="tool-photo">写真</button>
   <input type="file" id="photo-input" accept="image/*" multiple />
+
   <div class="sep"></div>
 
   <!-- Links -->
@@ -107,7 +110,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   </aside>
 </div>
 
-<div id="help">①「部屋を作成」で短いroomを発行 → ②OSM/地理院を切替 → ③ピン/ライン/ポリゴン/円/写真を追加 → ④「編集リンク」or「閲覧リンク」配布。</div>
+<div id="help">①「部屋を作成」で短いroomを発行 → ②OSM/地理院を切替 → ③選択/ピン/ライン/ポリゴン/円/写真 → ④「編集リンク」or「閲覧リンク」配布。</div>
 <div id="err"></div>
 
 <!-- 画像拡大モーダル -->
@@ -163,7 +166,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   }
   function showBasemap(id){
     ['bm-osm','bm-gsi-std','bm-gsi-photo'].forEach(l=> map.getLayer(l) && map.setLayoutProperty(l,'visibility', l===id?'visible':'none'));
-    ['bm-osm','bm-gsi-std','bm-gsi-photo'].forEach(btn=> $(btn.replace('bm-','bm-')).classList.toggle('active', btn===id));
+    ['bm-osm','bm-gsi-std','bm-gsi-photo'].forEach(btn=> $(btn).classList.toggle('active', btn===id));
   }
   map.on('load', ()=>{
     addBasemap(); showBasemap('bm-osm');
@@ -186,7 +189,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   const draw = new MapboxDraw({displayControlsDefault:false});
   map.addControl(draw,'top-left');
 
-  // 作成中（active）の破線化（レイヤ生成後に適用）
+  // 作成中（active）の破線化（Drawのスタイルに適用）
   function applyDashedPreview(){
     const targets=[
       ['gl-draw-line-stroke-active','line-dasharray',[2,2]],
@@ -196,29 +199,33 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
       if (map.getLayer(id)) try{ map.setPaintProperty(id, prop, val); }catch(_){}
     });
   }
-  map.on('render', function once(){
-    applyDashedPreview(); map.off('render', once);
-  });
+  map.on('render', function once(){ applyDashedPreview(); map.off('render', once); });
 
-  // ========= Yjs 同期 =========
+  // ========= ラベル用レイヤ（太字＋ハロ強め） =========
+  function ensureLabelSource(){
+    if (!map.getSource('labels')) map.addSource('labels', {type:'geojson', data:{type:'FeatureCollection',features:[]}});
+    if (!map.getLayer('labels')){
+      map.addLayer({
+        id:'labels', type:'symbol', source:'labels',
+        layout:{ 'text-field':['get','label'],'text-offset':[0,1.2],'text-size':15,'text-anchor':'top','text-font':['Open Sans Bold'] },
+        paint:{ 'text-color':'#111','text-halo-color':'#fff','text-halo-width':2.2,'text-halo-blur':0.5 }
+      });
+    }
+  }
+
+  // ========= Yjs 同期 / ローカル代替 =========
   const hasY = !!(window.Y && window.ywebrtc);
   const ydoc = hasY ? new Y.Doc() : null;
-  if (hasY && !ROOM_ID){ /* room未指定 → 同期は後で */ }
   const provider = hasY && ROOM_ID ? new ywebrtc.WebrtcProvider(ROOM_ID, ydoc) : null;
-  const yFeatures = hasY ? ydoc.getArray('features') : null; // すべての要素をここに保存（GeoJSON Feature）
-  const yGroups   = hasY ? ydoc.getMap('groups')   : null;   // グループ可視性等
+  const yFeatures = hasY ? ydoc.getArray('features') : null;
+  const localFeatures = []; // フォールバック
 
-  // ========= レンダリング（マーカー/写真/図形/ラベル/サイドバー） =========
+  // ========= レンダリング =========
   const markers = new Map(); // id -> Marker
-  const photosFull = new Map(); // id -> objectURL（大きめ）
+  const photosFull = new Map(); // id -> dataURL(大)
 
-  function clearMarkers(){
-    markers.forEach(m=>m.remove()); markers.clear();
-  }
-
-  function featureToBbox(f){
-    try { return turf.bbox(f); } catch { return null; }
-  }
+  function clearMarkers(){ markers.forEach(m=>m.remove()); markers.clear(); }
+  function featureToBbox(f){ try { return turf.bbox(f); } catch { return null; } }
 
   function addPinMarker(f){
     const el=document.createElement('div');
@@ -226,8 +233,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
       <svg class="pin" viewBox="0 0 24 24" fill="#d00" stroke="#fff" stroke-width="1.5">
         <path d="M12 22s-6-5.33-6-10a6 6 0 1 1 12 0c0 4.67-6 10-6 10z"></path>
         <circle cx="12" cy="10" r="2.8" fill="#fff"></circle>
-      </svg>
-    `;
+      </svg>`;
     const marker = new maplibregl.Marker({element:el, anchor:'bottom'}).setLngLat(f.geometry.coordinates).addTo(map);
     if (f.properties?.label){
       const pop = new maplibregl.Popup({offset:25}).setText(f.properties.label);
@@ -237,174 +243,110 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   }
 
   function addPhotoMarker(f){
-    const el=document.createElement('div');
-    el.style.display='flex'; el.style.flexDirection='column'; el.style.alignItems='center';
-    const img=document.createElement('img');
-    img.src=f.properties.thumb; img.className='photo-thumb'; img.alt=f.properties.label||'photo';
+    const el=document.createElement('div'); el.style.display='flex'; el.style.flexDirection='column'; el.style.alignItems='center';
+    const img=document.createElement('img'); img.src=f.properties.thumb; img.className='photo-thumb'; img.alt=f.properties.label||'photo';
     el.appendChild(img);
-    if (f.properties?.label){
-      const cap=document.createElement('div'); cap.textContent=f.properties.label;
-      cap.style.fontSize='.8rem'; cap.style.marginTop='.2rem';
-      el.appendChild(cap);
-    }
-    img.onclick=()=>{
-      const full=photosFull.get(f.id) || f.properties.thumb;
-      $('modal-img').src=full; $('modal').style.display='flex';
-    };
+    if (f.properties?.label){ const cap=document.createElement('div'); cap.textContent=f.properties.label; cap.style.fontSize='.8rem'; cap.style.marginTop='.2rem'; el.appendChild(cap); }
+    img.onclick=()=>{ const full=photosFull.get(f.id) || f.properties.thumb; $('modal-img').src=full; $('modal').style.display='flex'; };
     const marker = new maplibregl.Marker({element:el, anchor:'bottom'}).setLngLat(f.geometry.coordinates).addTo(map);
     markers.set(f.id, marker);
   }
 
-  function ensureLabelSource(){
-    if (!map.getSource('labels')) map.addSource('labels', {type:'geojson', data:{type:'FeatureCollection',features:[]}});
-    if (!map.getLayer('labels')){
-      map.addLayer({
-        id:'labels', type:'symbol', source:'labels',
-        layout:{ 'text-field':['get','label'],'text-offset':[0,1.2],'text-size':14,'text-anchor':'top' },
-        paint:{ 'text-halo-color':'#fff','text-halo-width':1.2 }
-      });
-    }
-  }
-
   function renderAll(){
-    // 描画レイヤは全部作り直し（visible=falseは除外）
     const feats = hasY ? yFeatures.toArray() : localFeatures;
-    // Drawをクリアして可視な図形のみ入れる（pin/photoはマーカー）
     try{ draw.deleteAll(); }catch(_){}
     clearMarkers();
-    const labelPts = [];
-
+    const labelPts=[];
     for(const f of feats){
       if (f.properties?.visible===false) continue;
-      if (f.properties?.kind==='pin'){
-        addPinMarker(f);
+      if (f.properties?.kind==='pin'){ addPinMarker(f); if(f.properties?.label){ labelPts.push({type:'Feature',geometry:{type:'Point',coordinates:f.geometry.coordinates},properties:{label:f.properties.label}}); } }
+      else if (f.properties?.kind==='photo'){ addPhotoMarker(f); }
+      else { try{ draw.add(f); }catch(_){}
         if (f.properties?.label){
-          labelPts.push({type:'Feature',geometry:{type:'Point',coordinates:f.geometry.coordinates},properties:{label:f.properties.label}});
-        }
-      } else if (f.properties?.kind==='photo'){
-        addPhotoMarker(f);
-      } else {
-        // line/polygon/circle は Draw に
-        try{ draw.add(f); }catch(_){}
-        if (f.properties?.label){
-          let p;
-          try{
-            if (f.geometry.type==='LineString'){ p=turf.center(f).geometry; }
-            else { p=turf.centerOfMass(f).geometry; }
-            labelPts.push({type:'Feature',geometry:p,properties:{label:f.properties.label}});
-          }catch(_){}
+          let p; try{ p=f.geometry.type==='LineString'?turf.center(f).geometry:turf.centerOfMass(f).geometry; labelPts.push({type:'Feature',geometry:p,properties:{label:f.properties.label}});}catch(_){}
         }
       }
     }
     ensureLabelSource();
-    const labelFC={type:'FeatureCollection',features:labelPts};
-    map.getSource('labels')?.setData(labelFC);
+    map.getSource('labels')?.setData({type:'FeatureCollection',features:labelPts});
     rebuildSidebar();
   }
 
-  // ローカルフォールバック（Yjsが使えない場合も動作）
-  const localFeatures = [];
-
   // ========= 作図フロー =========
-  let activeTool = null;     // 'pin'|'line'|'poly'|'circle'|'photo'
-  let circleDrawing = null;  // {center:[lng,lat]} during drag
-  let placingPhoto = null;   // {thumb, fullURL, label}
+  let activeTool='select'; // 'select'|'pin'|'line'|'poly'|'circle'|'photo'
+  let circleCenter=null;   // 1クリック目で中心
+  let placingPhoto=null;   // {thumb, fullURL, label}
 
   function setTool(t){
     activeTool=t;
-    ['tool-pin','tool-line','tool-poly','tool-circle','tool-photo'].forEach(id=>$(id).classList.toggle('active', id==='tool-'+t));
+    ['tool-select','tool-pin','tool-line','tool-poly','tool-circle','tool-photo'].forEach(id=>$(id).classList.toggle('active', id==='tool-'+t));
     if (t==='line') draw.changeMode('draw_line_string');
     else if (t==='poly') draw.changeMode('draw_polygon');
-    else draw.changeMode('simple_select'); // pin/circle/photo は独自処理
+    else draw.changeMode('simple_select'); // select/pin/circle/photo はここ
   }
+  $('tool-select').onclick=()=> setTool('select');
   $('tool-pin').onclick = ()=> { if(!EDITOR_KEY){alert('閲覧専用です。編集リンクを作成してください。'); return;} setTool('pin'); };
   $('tool-line').onclick= ()=> { if(!EDITOR_KEY){alert('閲覧専用です。'); return;} setTool('line'); };
   $('tool-poly').onclick= ()=> { if(!EDITOR_KEY){alert('閲覧専用です。'); return;} setTool('poly'); };
-  $('tool-circle').onclick=()=> { if(!EDITOR_KEY){alert('閲覧専用です。'); return;} setTool('circle'); };
+  $('tool-circle').onclick=()=> { if(!EDITOR_KEY){alert('閲覧専用です。'); return;} setTool('circle'); circleCenter=null; };
   $('tool-photo').onclick =()=> { if(!EDITOR_KEY){alert('閲覧専用です。'); return;} $('photo-input').click(); };
+  setTool('select'); // 初期は選択
 
-  // 円：ドラッグで半径決定（作成中は破線プレビュー）
-  let circlePreviewId=null;
+  // 円：1クリック中心→マウス追従→2クリック確定
   function updateCirclePreview(center, edge){
     const r = turf.distance(center, edge, {units:'kilometers'});
     const poly = turf.circle(center, r, {steps:64, units:'kilometers'});
     if (!map.getSource('circle-preview')){
       map.addSource('circle-preview',{type:'geojson',data:poly});
-      map.addLayer({id:'circle-preview',type:'line',source:'circle-preview',
-        paint:{'line-color':'#333','line-width':2,'line-dasharray':[2,2]}});
-    } else {
-      map.getSource('circle-preview').setData(poly);
-    }
+      map.addLayer({id:'circle-preview',type:'line',source:'circle-preview',paint:{'line-color':'#333','line-width':2,'line-dasharray':[2,2]}});
+    } else { map.getSource('circle-preview').setData(poly); }
   }
-  function clearCirclePreview(){
-    if (map.getLayer('circle-preview')) map.removeLayer('circle-preview');
-    if (map.getSource('circle-preview')) map.removeSource('circle-preview');
-  }
-  map.on('mousedown', (e)=>{
-    if (activeTool==='circle'){ circleDrawing={center:[e.lngLat.lng,e.lngLat.lat]}; map.getCanvas().style.cursor='crosshair'; }
-  });
-  map.on('mousemove', (e)=>{
-    if (circleDrawing){ updateCirclePreview(circleDrawing.center, [e.lngLat.lng,e.lngLat.lat]); }
-  });
-  map.on('mouseup', (e)=>{
-    if (!circleDrawing) return;
-    const center = circleDrawing.center;
-    const rkm = turf.distance(center, [e.lngLat.lng,e.lngLat.lat], {units:'kilometers'});
-    const poly = turf.circle(center, rkm, {steps:64, units:'kilometers'});
-    clearCirclePreview(); map.getCanvas().style.cursor='';
-    circleDrawing=null;
+  function clearCirclePreview(){ if (map.getLayer('circle-preview')) map.removeLayer('circle-preview'); if (map.getSource('circle-preview')) map.removeSource('circle-preview'); }
 
-    const label = prompt('円のラベルを入力してください（任意）') || '';
-    const feat = {type:'Feature', id:nowId(), geometry:poly.geometry, properties:{kind:'circle', label, visible:true}};
-    addFeature(feat);
-  });
+  map.on('mousemove', (e)=>{ if(activeTool==='circle' && circleCenter){ updateCirclePreview(circleCenter, [e.lngLat.lng,e.lngLat.lat]); } });
 
-  // ピン：クリックで追加（ピン先端を座標に合わせる）
   map.on('click', (e)=>{
     if (activeTool==='pin'){
-      const label = prompt('ピンのラベルを入力してください（任意）') || '';
-      const feat = {type:'Feature', id:nowId(), geometry:{type:'Point',coordinates:[e.lngLat.lng,e.lngLat.lat]},
-                    properties:{kind:'pin', label, visible:true}};
-      addFeature(feat);
+      const label = prompt('ピンのラベル（任意）') || '';
+      const feat = {type:'Feature', id:nowId(), geometry:{type:'Point',coordinates:[e.lngLat.lng,e.lngLat.lat]}, properties:{kind:'pin', label, visible:true}};
+      addFeature(feat); return;
+    }
+    if (activeTool==='circle'){
+      if (!circleCenter){ circleCenter=[e.lngLat.lng,e.lngLat.lat]; updateCirclePreview(circleCenter,circleCenter); return; }
+      // 2クリック目：確定
+      const rkm=turf.distance(circleCenter,[e.lngLat.lng,e.lngLat.lat],{units:'kilometers'});
+      const poly=turf.circle(circleCenter,rkm,{steps:64,units:'kilometers'});
+      clearCirclePreview(); const label=prompt('円のラベル（任意）')||'';
+      const feat={type:'Feature',id:nowId(),geometry:poly.geometry,properties:{kind:'circle',label,visible:true}};
+      circleCenter=null; addFeature(feat); return;
     }
     if (placingPhoto){
-      const feat = {type:'Feature', id:nowId(), geometry:{type:'Point',coordinates:[e.lngLat.lng,e.lngLat.lat]},
-                    properties:{kind:'photo', label:placingPhoto.label||'', thumb:placingPhoto.thumb, visible:true}};
-      photosFull.set(feat.id, placingPhoto.fullURL);
-      placingPhoto=null; addFeature(feat);
-      alert('写真を配置しました。');
+      const feat = {type:'Feature', id:nowId(), geometry:{type:'Point',coordinates:[e.lngLat.lng,e.lngLat.lat]}, properties:{kind:'photo', label:placingPhoto.label||'', thumb:placingPhoto.thumb, visible:true}};
+      photosFull.set(feat.id, placingPhoto.fullURL); placingPhoto=null; addFeature(feat); alert('写真を配置しました。'); return;
     }
   });
 
   // ライン/ポリゴン：確定時にラベル入力
   map.on('draw.create', (e)=>{
-    const f = e.features[0];
-    if (!f) return;
-    if (f.geometry.type==='Point'){
-      // DrawのPointは使わず削除（ピンは独自処理）
-      draw.delete(f.id);
-      return;
-    }
+    const f = e.features[0]; if(!f) return;
+    if (f.geometry.type==='Point'){ draw.delete(f.id); return; } // Drawのポイントは未使用
     const label = prompt((f.geometry.type==='LineString'?'ライン':'ポリゴン')+'のラベル（任意）') || '';
     const feat = {type:'Feature', id:nowId(), geometry:f.geometry, properties:{kind:(f.geometry.type==='LineString'?'line':'polygon'), label, visible:true}};
-    // Draw管理から外す
-    draw.delete(f.id);
-    addFeature(feat);
+    draw.delete(f.id); addFeature(feat);
+    setTool('select');
   });
 
-  // 写真アップロード：EXIFから座標→サムネ生成（軽量）
+  // 写真アップロード
   $('photo-input').addEventListener('change', async (ev)=>{
     const files=[...ev.target.files];
     for(const file of files){
       const gps = await exifr.gps(file).catch(()=>null);
       const img = await fileToImage(file);
-      const {thumb,fullURL} = await makeThumb(img, 800, 512); // full:最大800px, thumb:最大512px
+      const {thumb,fullURL} = await makeThumb(img, 800, 512);
       const label = file.name.replace(/\.[^.]+$/,'');
       if (gps && gps.longitude!=null && gps.latitude!=null){
-        const feat = {type:'Feature', id:nowId(), geometry:{type:'Point',coordinates:[gps.longitude,gps.latitude]},
-                      properties:{kind:'photo', label, thumb, visible:true}};
-        photosFull.set(feat.id, fullURL);
-        addFeature(feat);
+        const feat = {type:'Feature', id:nowId(), geometry:{type:'Point',coordinates:[gps.longitude,gps.latitude]}, properties:{kind:'photo', label, thumb, visible:true}};
+        photosFull.set(feat.id, fullURL); addFeature(feat);
       } else {
         placingPhoto = {thumb, fullURL, label};
         alert('この写真にはGPSがありません。地図をクリックして配置してください。');
@@ -419,102 +361,120 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
       const w=Math.round(img.naturalWidth*scale), h=Math.round(img.naturalHeight*scale);
       const c=document.createElement('canvas'); c.width=w; c.height=h;
       const ctx=c.getContext('2d'); ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
-      ctx.drawImage(img,0,0,w,h);
-      return c.toDataURL('image/jpeg', 0.75); // 圧縮率バランス
+      ctx.drawImage(img,0,0,w,h); return c.toDataURL('image/jpeg', 0.75);
     }
     const fullURL = resizeToDataURL(img, fullMax);
     const thumb   = resizeToDataURL(img, thumbMax);
     return {thumb, fullURL};
   }
 
-  // ========= 機能: 追加/更新/削除 =========
-  function addFeature(feat){
-    if (hasY){ yFeatures.push([feat]); }
-    else { localFeatures.push(feat); }
-    renderAll();
+  // ========= 追加/更新/削除（Yjs or ローカル） =========
+  function featsArr(){ return hasY ? yFeatures.toArray() : localFeatures; }
+  function setFeats(newArr){
+    if (hasY){ yFeatures.delete(0, yFeatures.length); newArr.forEach(f=>yFeatures.push([f])); }
+    else { localFeatures.splice(0, localFeatures.length, ...newArr); }
   }
+  function addFeature(feat){ if (hasY) yFeatures.push([feat]); else localFeatures.push(feat); renderAll(); }
   function updateFeature(id, updater){
-    const feats = hasY ? yFeatures.toArray() : localFeatures;
-    const idx = feats.findIndex(f=>f.id===id);
-    if (idx<0) return;
-    const nf = JSON.parse(JSON.stringify(feats[idx]));
-    updater(nf);
-    if (hasY){
-      yFeatures.delete(idx,1); yFeatures.insert(idx,[nf]);
-    } else {
-      localFeatures[idx]=nf;
-    }
-    renderAll();
+    const feats = featsArr();
+    const idx = feats.findIndex(f=>f.id===id); if (idx<0) return;
+    const nf = JSON.parse(JSON.stringify(feats[idx])); updater(nf);
+    feats[idx]=nf; setFeats(feats); renderAll();
   }
   function deleteFeature(id){
-    const feats = hasY ? yFeatures.toArray() : localFeatures;
-    const idx = feats.findIndex(f=>f.id===id);
-    if (idx<0) return;
-    if (hasY){ yFeatures.delete(idx,1); }
-    else { localFeatures.splice(idx,1); }
-    photosFull.delete(id);
-    renderAll();
+    const feats = featsArr(); const idx = feats.findIndex(f=>f.id===id); if (idx<0) return;
+    feats.splice(idx,1); setFeats(feats); photosFull.delete(id); renderAll();
   }
 
-  // ========= サイドバー（グループ/表示切替/ズーム/ドラッグ並び替え） =========
-  function groupKeyOf(f){ return f.properties?.group || '未分類'; }
-  function kindLabel(k){ return k==='pin'?'ピン':k==='photo'?'写真':k==='line'?'ライン':k==='polygon'?'ポリゴン':k==='circle'?'円':'項目'; }
-
+  // ========= サイドバー（D&D 並び替え／重ねてグループ化） =========
   function rebuildSidebar(){
-    const feats = hasY ? yFeatures.toArray() : localFeatures;
-    // orderでソート
-    feats.sort((a,b)=>(a.properties?.order||0)-(b.properties?.order||0));
+    const feats = featsArr().slice().sort((a,b)=>(a.properties?.order||0)-(b.properties?.order||0));
     const groups={};
-    for(const f of feats){
-      const g=groupKeyOf(f); (groups[g]||(groups[g]=[])).push(f);
-    }
-    const list = $('list'); list.innerHTML='';
-    Object.keys(groups).forEach(gname=>{
-      const box=document.createElement('div'); box.className='group';
+    feats.forEach(f=>{ const g=f.properties?.group||'未分類'; (groups[g]||(groups[g]=[])).push(f); });
+
+    const list=$('list'); list.innerHTML='';
+    Object.entries(groups).forEach(([gname, arr])=>{
+      const box=document.createElement('div'); box.className='group'; box.dataset.group=gname;
+
       const head=document.createElement('div'); head.className='ghead';
-      const t=document.createElement('div'); t.textContent=gname;
-      const vis=document.createElement('span'); vis.textContent='👁'; vis.style.cursor='pointer';
-      let gVisible=true;
-      vis.onclick=()=>{
-        gVisible=!gVisible; vis.style.opacity=gVisible?1:.4;
-        groups[gname].forEach(f=>updateFeature(f.id, nf=>{ nf.properties.visible=gVisible; }));
+      const title=document.createElement('div'); title.textContent=gname;
+      const geye=document.createElement('span'); geye.textContent='👁'; geye.style.cursor='pointer';
+      head.appendChild(title); head.appendChild(geye); box.appendChild(head);
+
+      // グループ可視切替
+      geye.onclick=()=>{
+        const currentVisible = arr.some(f=>f.properties?.visible!==false);
+        arr.forEach(f=>updateFeature(f.id, nf=>{ nf.properties.visible = !currentVisible; }));
       };
-      head.appendChild(t); head.appendChild(vis); box.appendChild(head);
 
       const items=document.createElement('div'); items.className='gitems';
-      groups[gname].forEach(f=>{
-        const it=document.createElement('div'); it.className='item'; it.setAttribute('draggable','true'); it.dataset.id=f.id;
+      arr.forEach(f=>{
+        const it=document.createElement('div'); it.className='item'; it.setAttribute('draggable','true'); it.dataset.id=f.id; it.dataset.group=gname;
         if (f.properties?.visible===false) it.classList.add('hidden');
+
         const eye=document.createElement('span'); eye.textContent=(f.properties?.visible===false)?'🙈':'👁'; eye.className='eye';
-        eye.onclick=()=> updateFeature(f.id, nf=>{ nf.properties.visible = !(nf.properties?.visible===false); });
+        eye.onclick=()=> updateFeature(f.id, nf=>{
+          const cur = nf.properties?.visible !== false; // 現在の可視状態
+          nf.properties.visible = !cur;
+        });
+
         const name=document.createElement('div'); name.className='name';
         name.textContent=`${kindLabel(f.properties?.kind)}：${f.properties?.label||'(無題)'}`;
         name.onclick=()=>{
           if (f.geometry.type==='Point'){ map.flyTo({center:f.geometry.coordinates, zoom:18}); }
           else { const b=featureToBbox(f); if(b) map.fitBounds([[b[0],b[1]],[b[2],b[3]]],{padding:40}); }
         };
+
         const edit=document.createElement('button'); edit.textContent='✏️'; edit.className='btn';
         edit.onclick=()=>{
           const lab=prompt('ラベルを編集', f.properties?.label||'')||'';
           updateFeature(f.id, nf=>{ nf.properties.label=lab; });
         };
+
         const del=document.createElement('button'); del.textContent='🗑'; del.className='btn';
         del.onclick=()=>{ if(confirm('削除しますか？')) deleteFeature(f.id); };
+
         it.appendChild(eye); it.appendChild(name); it.appendChild(edit); it.appendChild(del);
         items.appendChild(it);
       });
-      // D&D 並び替え
-      items.addEventListener('dragstart', e=>{ if(e.target.classList.contains('item')) e.dataTransfer.setData('text/plain', e.target.dataset.id); });
+
+      // D&D 並び替え／グループ化
+      let dragId=null;
+      items.addEventListener('dragstart', e=>{ const it=e.target.closest('.item'); if(!it) return; dragId=it.dataset.id; });
       items.addEventListener('dragover', e=>{ e.preventDefault(); });
       items.addEventListener('drop', e=>{
         e.preventDefault();
-        const fromId=e.dataTransfer.getData('text/plain');
-        const toEl=e.target.closest('.item'); if(!toEl) return;
-        const toId=toEl.dataset.id;
-        const feats2 = hasY ? yFeatures.toArray() : localFeatures;
-        const order = (id)=> (feats2.find(f=>f.id===id)?.properties?.order)||0;
-        const toOrder = order(toId);
-        updateFeature(fromId, nf=>{ nf.properties.order = toOrder - 0.1; });
+        const fromId=dragId; if(!fromId) return;
+        const toItem=e.target.closest('.item');
+        const feats = featsArr();
+
+        // 1) どこにドロップしたか
+        if (toItem){
+          const toId=toItem.dataset.id;
+          const fromF = feats.find(f=>f.id===fromId);
+          const toF   = feats.find(f=>f.id===toId);
+          if (!fromF || !toF) return;
+
+          const fromG = fromF.properties?.group || '未分類';
+          const toG   = toF.properties?.group   || '未分類';
+
+          if (fromG === toG){
+            // 同じグループ → 新しいグループを作って両方入れる
+            const newG = 'グループ ' + new Date().toLocaleTimeString();
+            fromF.properties = {...fromF.properties, group:newG};
+            toF.properties   = {...toF.properties,   group:newG};
+          } else {
+            // 異なるグループ → そのグループへ移動
+            fromF.properties = {...fromF.properties, group:toG};
+          }
+
+          // 並び順は一旦末尾に
+          const maxOrder = Math.max(0, ...feats.map(f=>f.properties?.order||0));
+          fromF.properties.order = maxOrder + 1;
+          setFeats(feats);
+          normalizeOrder(); // DOM順へ正規化
+          renderAll();
+        }
       });
 
       box.appendChild(items);
@@ -522,27 +482,39 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
     });
   }
 
-  $('btn-add-group').onclick=()=>{
-    const name = prompt('グループ名を入力','新しいグループ'); if(!name) return;
-    // グループは明示的に作らず、アイテムの properties.group に付けた時点で出現する仕様。ここでは提示のみ。
-    alert('グループ「'+name+'」を作成しました。\n項目の✏️から「グループ名」に '+name+' を追記して管理してください。');
-  };
-  $('btn-toggle-all').onclick=()=>{
-    const feats = hasY ? yFeatures.toArray() : localFeatures;
-    const anyVisible = feats.some(f=>f.properties?.visible!==false);
-    feats.forEach(f=>updateFeature(f.id, nf=>{ nf.properties.visible = !anyVisible; }));
-  };
-
-  if (hasY){
-    yFeatures.observeDeep(()=> renderAll());
+  function normalizeOrder(){
+    // サイドバーの見た目順に order を振り直す
+    const feats = featsArr();
+    const list = $('list');
+    let order = 0;
+    list.querySelectorAll('.group .gitems .item').forEach(it=>{
+      const id = it.dataset.id;
+      const f = feats.find(x=>x.id===id);
+      if (f){ f.properties = {...f.properties, order: order++ }; }
+    });
+    setFeats(feats);
   }
 
-  // ========= 削除ボタン =========
+  function kindLabel(k){ return k==='pin'?'ピン':k==='photo'?'写真':k==='line'?'ライン':k==='polygon'?'ポリゴン':k==='circle'?'円':'項目'; }
+
+  $('btn-add-group').onclick=()=>{
+    const name = prompt('新しいグループ名','新しいグループ'); if(!name) return;
+    // 空のグループ枠は作らず、項目が group を持った時点で出現する設計のためガイダンス表示のみ
+    alert('グループ「'+name+'」を作成しました。項目の✏️からラベル末尾に「（'+name+'）」等で識別し、D&Dでまとめてください。');
+  };
+
+  $('btn-toggle-all').onclick=()=>{
+    const feats = featsArr();
+    const anyVisible = feats.some(f=>f.properties?.visible!==false);
+    feats.forEach(f=> f.properties = {...f.properties, visible: !anyVisible});
+    setFeats(feats); renderAll();
+  };
+
+  // ========= 削除 =========
   $('tool-delete').onclick=()=>{
     if(!EDITOR_KEY){ alert('閲覧専用です。'); return; }
     const ids = draw.getSelectedIds ? draw.getSelectedIds() : [];
     if (ids.length) { draw.trash(); return; }
-    // サイドバーから削除推奨（ここではヒント）
     alert('削除はサイドバーの🗑から行ってください。');
   };
 
@@ -568,7 +540,10 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
     catch(e){ prompt('コピーできない場合は手動でコピーしてください', url); }
   };
 
-  // 初回描画
+  // ====== 監視して再描画（Yjs使用時）======
+  if (hasY){ yFeatures.observeDeep(()=> renderAll()); }
+
+  // 初期描画
   renderAll();
 })();
 </script>
