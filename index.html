@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PHN Field Collab – サーバ不要・共同編集＋URL共有</title>
+
+  <!-- MapLibre -->
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+
+  <!-- Terra Draw (描画) -->
+  <script src="https://cdn.jsdelivr.net/npm/terra-draw@1.3.5/dist/terra-draw.umd.js"></script>
+
+  <!-- Yjs + y-webrtc（P2P同期／サーバ不要） -->
+  <script src="https://cdn.jsdelivr.net/npm/yjs@13.6.18/dist/yjs.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/y-webrtc@10.6.3/dist/y-webrtc.js"></script>
+
+  <!-- LZ-String（URL圧縮） -->
+  <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
+
+  <style>
+    html, body { height: 100%; margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    .toolbar {
+      display: flex; gap: .5rem; padding: .5rem .75rem;
+      border-bottom: 1px solid #e5e7eb; background: #f9fafb; align-items: center; flex-wrap: wrap;
+    }
+    .toolbar .right { margin-left: auto; display: flex; gap: .5rem; align-items: center; }
+    .badge { font-size: .8rem; padding: .2rem .55rem; border-radius: 999px; border: 1px solid #d1d5db; background: #fff; }
+    button {
+      padding: .45rem .7rem; border: 1px solid #cbd5e1; background: #fff; border-radius: .6rem; cursor: pointer;
+    }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    #map { position: absolute; inset: 48px 0 0 0; }
+    .hint { color: #64748b; font-size: .85rem; }
+    .sep { width: 1px; height: 28px; background: #e5e7eb; margin: 0 .25rem; }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <strong>PHN Field Collab</strong>
+    <span class="hint">#room と #editorKey をURLハッシュで指定（例：#room=nara-demo&editorKey=abc123）</span>
+    <div class="sep"></div>
+
+    <button id="btn-select">選択</button>
+    <button id="btn-point">ポイント</button>
+    <button id="btn-line">ライン</button>
+    <button id="btn-polygon">ポリゴン</button>
+    <button id="btn-circle">円</button>
+    <button id="btn-delete" title="選択削除 / 長押しで全削除">削除</button>
+
+    <div class="right">
+      <button id="btn-share">見たままURLをコピー</button>
+      <span id="role-badge" class="badge">読み取り専用</span>
+    </div>
+  </div>
+  <div id="map"></div>
+
+  <script>
+    // =========================
+    // 1) URLハッシュの取り出し
+    // =========================
+    const H = new URLSearchParams(location.hash.slice(1));
+    const ROOM_ID    = H.get('room') || 'phnfield-default';
+    const EDITOR_KEY = H.get('editorKey');      // ある人だけ編集可
+    const READ_ONLY  = !EDITOR_KEY;
+    const roleBadge  = document.getElementById('role-badge');
+    roleBadge.textContent = READ_ONLY ? '閲覧専用' : '編集可';
+
+    // =========================
+    // 2) Yjs（P2P同期）
+    // =========================
+    const ydoc      = new Y.Doc();
+    const provider  = new Y.WebrtcProvider(ROOM_ID, ydoc); // 公開シグナリング利用（サーバ不要）
+    const yFeatures = ydoc.getArray('features');           // GeoJSON Feature[]
+    const yMapState = ydoc.getMap('mapState');             // {center, zoom, bearing, pitch}
+
+    // =========================
+    // 3) MapLibre 初期化
+    // =========================
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: 'https://demotiles.maplibre.org/style.json',
+      center: [135.0, 35.0],
+      zoom: 5,
+      pitch: 0,
+      bearing: 0
+    });
+
+    // 位置情報ボタン（現地用）
+    map.addControl(new maplibregl.GeolocateControl({
+      positionOptions: { enableHighAccuracy: true },
+      trackUserLocation: true,
+      showUserHeading: true
+    }));
+
+    map.addControl(new maplibregl.NavigationControl({ showZoom: true }), 'top-right');
+
+    // =========================
+    // 4) Terra Draw（描画）
+    // =========================
+    const draw = new TerraDraw({
+      adapter: new TerraDrawMapLibreGLAdapter({ map }),
+      modes: [
+        new TerraDrawSelectMode(),
+        new TerraDrawPointMode(),
+        new TerraDrawLineStringMode(),
+        new TerraDrawPolygonMode(),
+        new TerraDrawCircleMode()
+      ],
+      // 現場視認性を少し高める（任意）
+      styles: {
+        selected: { polygonFillOpacity: 0.2, lineStringWidth: 3 },
+        polygon:  { polygonFillOpacity: 0.15, lineStringWidth: 2 },
+        point:    { pointWidth: 8, pointOutlineWidth: 2 }
+      }
+    });
+    draw.start();
+
+    // ボタン
+    const $ = (id)=>document.getElementById(id);
+    $('btn-select').onclick  = ()=> { if(!READ_ONLY) draw.setMode('select'); };
+    $('btn-point').onclick   = ()=> { if(!READ_ONLY) draw.setMode('point'); };
+    $('btn-line').onclick    = ()=> { if(!READ_ONLY) draw.setMode('linestring'); };
+    $('btn-polygon').onclick = ()=> { if(!READ_ONLY) draw.setMode('polygon'); };
+    $('btn-circle').onclick  = ()=> { if(!READ_ONLY) draw.setMode('circle'); };
+    $('btn-delete').onclick  = ()=> {
+      if(READ_ONLY) return;
+      if (draw.getSelectedIds && draw.getSelectedIds().length) {
+        draw.deleteSelected();
+      } else if (confirm('すべての描画を削除します。よろしいですか？')) {
+        draw.deleteAll();
+        pushFeatures();
+      }
+    };
+
+    // 閲覧専用UI
+    if (READ_ONLY) {
+      ['btn-select','btn-point','btn-line','btn-polygon','btn-circle','btn-delete']
+        .forEach(id => $(id).disabled = true);
+      draw.setMode('select'); // 選択のみ（編集不可）
+    }
+
+    // =========================
+    // 5) 双方向同期（地図⇄Yjs／描画⇄Yjs）
+    // =========================
+
+    // 地図 → Yjs（自分が動かしたら共有へ）
+    function pushMapState() {
+      if (READ_ONLY) return;
+      const c = map.getCenter();
+      yMapState.set('center', [c.lng, c.lat]);
+      yMapState.set('zoom',   map.getZoom());
+      yMapState.set('bearing',map.getBearing());
+      yMapState.set('pitch',  map.getPitch());
+    }
+    map.on('moveend', pushMapState);
+
+    // Yjs → 地図（他人の操作を反映）
+    yMapState.observe(() => {
+      const center  = yMapState.get('center');
+      const zoom    = yMapState.get('zoom');
+      const bearing = yMapState.get('bearing') || 0;
+      const pitch   = yMapState.get('pitch')   || 0;
+      if (center && typeof zoom === 'number') {
+        map.jumpTo({ center, zoom, bearing, pitch });
+      }
+    });
+
+    // 描画 → Yjs（自分が描いたら共有へ）
+    function pushFeatures() {
+      if (READ_ONLY) return;
+      const fc = draw.getAll ? draw.getAll() : { type:'FeatureCollection', features: [] };
+      const feats = fc.features || [];
+      ydoc.transact(() => {
+        yFeatures.delete(0, yFeatures.length);
+        feats.forEach(f => yFeatures.push([f]));
+      });
+    }
+    draw.on('create',  pushFeatures);
+    draw.on('update',  pushFeatures);
+    draw.on('delete',  pushFeatures);
+    draw.on('selectionchange', ()=>{}); // 将来拡張用
+
+    // Yjs → 描画（他人の編集を反映）
+    function applyFeaturesFromY() {
+      const feats = yFeatures.toArray();
+      if (draw.deleteAll) draw.deleteAll();
+      if (draw.addFeatures) draw.addFeatures(feats);
+      else if (draw.add) feats.forEach(f => draw.add(f));
+    }
+    yFeatures.observeDeep(applyFeaturesFromY);
+
+    // 初期同期（既に共有状態があれば反映、無ければ現状をプッシュ）
+    map.on('load', () => {
+      if (yMapState.size > 0) {
+        // 観察で反映されるので何もしない
+      } else {
+        pushMapState();
+      }
+      if (yFeatures.length > 0) {
+        applyFeaturesFromY();
+      }
+    });
+
+    // =========================
+    // 6) 見たままURL（URLハッシュに圧縮して埋め込み）
+    // =========================
+    function exportStateToURL() {
+      const c = map.getCenter();
+      const fc = draw.getAll ? draw.getAll() : { type:'FeatureCollection', features: [] };
+      const state = {
+        center: [c.lng, c.lat],
+        zoom: map.getZoom(),
+        bearing: map.getBearing(),
+        pitch: map.getPitch(),
+        features: fc.features || []
+      };
+      const json = JSON.stringify(state);
+      const packed = LZString.compressToEncodedURIComponent(json);
+
+      const base = location.origin + location.pathname;
+      const q = new URLSearchParams(location.hash.slice(1));
+      q.set('state', packed); // ここに状態を格納
+      const url = `${base}#${q.toString()}`;
+      return url;
+    }
+
+    function importStateFromURL() {
+      const packed = new URLSearchParams(location.hash.slice(1)).get('state');
+      if (!packed) return false;
+      const json = LZString.decompressFromEncodedURIComponent(packed);
+      if (!json) return false;
+      const s = JSON.parse(json);
+
+      if (s.center && typeof s.zoom === 'number') {
+        map.jumpTo({ center: s.center, zoom: s.zoom, bearing: s.bearing||0, pitch: s.pitch||0 });
+      }
+      if (s.features && s.features.length) {
+        if (draw.deleteAll) draw.deleteAll();
+        if (draw.addFeatures) draw.addFeatures(s.features);
+        else if (draw.add) s.features.forEach(f => draw.add(f));
+      }
+      return true;
+    }
+
+    document.getElementById('btn-share').onclick = async () => {
+      const url = exportStateToURL();
+      try {
+        await navigator.clipboard.writeText(url);
+        alert('共有URLをコピーしました:\\n' + url);
+      } catch (e) {
+        prompt('コピーできない場合はこのURLを手動でコピーしてください', url);
+      }
+    };
+
+    // ページ初期表示時に state が付いていれば読み込み
+    importStateFromURL();
+
+    // =========================
+    // 7) 簡易ローカル保存（オフライン耐性）
+    // =========================
+    window.addEventListener('beforeunload', () => {
+      try {
+        const dump = Y.encodeStateAsUpdate(ydoc);
+        localStorage.setItem('phnfield:' + ROOM_ID, Array.from(dump).join(','));
+      } catch(e){}
+    });
+    (function restoreLocal(){
+      const raw = localStorage.getItem('phnfield:' + ROOM_ID);
+      if(!raw) return;
+      const bytes = new Uint8Array(raw.split(',').map(n=>Number(n)));
+      Y.applyUpdate(ydoc, bytes);
+    })();
+  </script>
+</body>
+</html>
