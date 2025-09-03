@@ -9,19 +9,25 @@
 <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet"/>
 <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
 
-<!-- Mapbox GL Draw（MapLibre対応の描画UI） -->
+<!-- Mapbox GL Draw（描画UI） -->
 <link href="https://cdn.jsdelivr.net/npm/@mapbox/mapbox-gl-draw@1.4.3/dist/mapbox-gl-draw.css" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/@mapbox/mapbox-gl-draw@1.4.3/dist/mapbox-gl-draw.js"></script>
 
-<!-- Turf（幾何/円作図等） -->
+<!-- Turf（距離/面積/円など） -->
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
 
-<!-- EXIF 解析（GPS抽出） -->
+<!-- EXIF（GPS抽出） -->
 <script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.umd.js"></script>
 
 <!-- Yjs + y-webrtc（P2P同期）-->
 <script src="https://cdn.jsdelivr.net/npm/yjs@13.6.18/dist/yjs.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/y-webrtc@10.6.3/dist/y-webrtc.min.js"></script>
+
+<!-- FlatGeobuf（FGB出力） -->
+<script src="https://cdn.jsdelivr.net/npm/flatgeobuf@3.25.0/dist/flatgeobuf.min.js"></script>
+
+<!-- JSZip（ZIP作成） -->
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 
 <style>
 :root{--bg:#f8fafc;--line:#e5e7eb;--text:#0f172a;--muted:#64748b;--accent:#2563eb;--panel:#ffffff}
@@ -36,13 +42,13 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
 .sep{width:1px;height:28px;background:var(--line);margin:0 .25rem}
 .muted{color:var(--muted);font-size:.9rem}
 #layout{position:relative;height:calc(100% - 64px)}
-#map{position:absolute;inset:0 320px 0 0}
-#side{position:absolute;right:0;top:0;bottom:0;width:320px;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column}
+#map{position:absolute;inset:0 340px 0 0}
+#side{position:absolute;right:0;top:0;bottom:0;width:340px;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column}
 #side .head{padding:.6rem .75rem;border-bottom:1px solid var(--line);display:flex;gap:.5rem;align-items:center;justify-content:space-between}
 #list{overflow:auto;padding:.5rem}
 .group{border:1px solid var(--line);border-radius:.6rem;margin-bottom:.5rem}
 .group .ghead{display:flex;align-items:center;justify-content:space-between;padding:.45rem .6rem;background:#f9fafb;border-bottom:1px solid var(--line)}
-.group .gitems{padding:.35rem}
+.group .gitems{padding:.35rem;min-height:16px}
 .item{display:flex;align-items:center;gap:.4rem;padding:.35rem;border-radius:.5rem}
 .item:hover{background:#f3f4f6}
 .item .name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -56,13 +62,13 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
 #photo-input{display:none}
 #modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:20}
 #modal img{max-width:90vw;max-height:90vh;border-radius:.5rem;background:#000}
-@media (max-width:1024px){#map{right:0}#side{position:static;width:100%;height:280px;border-left:none;border-top:1px solid var(--line)}#layout{height:calc(100% - 64px - 280px)}}
+@media (max-width:1100px){#map{right:0}#side{position:static;width:100%;height:300px;border-left:none;border-top:1px solid var(--line)}#layout{height:calc(100% - 64px - 300px)}}
 </style>
 </head>
 <body>
 <div id="topbar">
   <span id="brand">PHN Field Collab</span>
-  <span class="muted">ボタンで短い room / editorKey を自動発行（短いURL）</span>
+  <span class="muted">短い room / editorKey をボタンで発行（短いURL）</span>
   <div class="sep"></div>
 
   <!-- Basemap -->
@@ -85,10 +91,11 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
 
   <div class="sep"></div>
 
-  <!-- Links -->
+  <!-- Links / Export -->
   <button class="btn" id="btn-make-room">部屋を作成</button>
   <button class="btn" id="btn-make-editor">編集リンクを作成</button>
   <button class="btn" id="btn-copy-view">閲覧リンクをコピー</button>
+  <button class="btn" id="btn-export">エクスポート</button>
 
   <div style="margin-left:auto;display:flex;gap:.5rem;align-items:center">
     <span class="badge" id="role-badge">閲覧専用</span>
@@ -110,7 +117,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   </aside>
 </div>
 
-<div id="help">①「部屋を作成」で短いroomを発行 → ②OSM/地理院を切替 → ③選択/ピン/ライン/ポリゴン/円/写真 → ④「編集リンク」or「閲覧リンク」配布。</div>
+<div id="help">①「部屋を作成」で短いroom → ②OSM/地理院切替 → ③選択/ピン/ライン/ポリゴン/円/写真 → ④「編集リンク」「閲覧リンク」配布 → ⑤必要なら「エクスポート」。</div>
 <div id="err"></div>
 
 <!-- 画像拡大モーダル -->
@@ -126,6 +133,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   const base62="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   function randomKey(len=12){ const a=new Uint8Array(len); crypto.getRandomValues(a); return Array.from(a, v=>base62[v%62]).join(''); }
   const nowId = ()=> 'id_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+  const ts = ()=>{ const d=new Date(); const z=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`; };
 
   // ========= URL（短い r/k） =========
   const H = getHash();
@@ -142,9 +150,8 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   // ========= Map =========
   const EMPTY_STYLE={version:8,sources:{},layers:[],glyphs:"https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf"};
   let map;
-  try{
-    map=new maplibregl.Map({container:'map',style:EMPTY_STYLE,center:[135.79,34.51],zoom:8.2,bearing:0,pitch:0});
-  }catch(e){ showErr('Map初期化エラー: '+e.message); return; }
+  try{ map=new maplibregl.Map({container:'map',style:EMPTY_STYLE,center:[135.79,34.51],zoom:8.2,bearing:0,pitch:0}); }
+  catch(e){ showErr('Map初期化エラー: '+e.message); return; }
 
   // Basemap
   function addBasemap(){
@@ -189,7 +196,6 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   const draw = new MapboxDraw({displayControlsDefault:false});
   map.addControl(draw,'top-left');
 
-  // 作成中（active）の破線化（Drawのスタイルに適用）
   function applyDashedPreview(){
     const targets=[
       ['gl-draw-line-stroke-active','line-dasharray',[2,2]],
@@ -201,14 +207,15 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   }
   map.on('render', function once(){ applyDashedPreview(); map.off('render', once); });
 
-  // ========= ラベル用レイヤ（太字＋ハロ強め） =========
+  // ========= ラベル（数字/英字/記号OK、太字＆ハロ強め） =========
   function ensureLabelSource(){
     if (!map.getSource('labels')) map.addSource('labels', {type:'geojson', data:{type:'FeatureCollection',features:[]}});
     if (!map.getLayer('labels')){
       map.addLayer({
         id:'labels', type:'symbol', source:'labels',
-        layout:{ 'text-field':['get','label'],'text-offset':[0,1.2],'text-size':15,'text-anchor':'top','text-font':['Open Sans Bold'] },
-        paint:{ 'text-color':'#111','text-halo-color':'#fff','text-halo-width':2.2,'text-halo-blur':0.5 }
+        layout:{ 'text-field':['to-string',['get','label']], 'text-offset':[0,1.2], 'text-size':15, 'text-anchor':'top',
+                 'text-font':['Noto Sans Regular','Open Sans Regular','Open Sans Bold'] },
+        paint:{ 'text-color':'#111','text-halo-color':'#fff','text-halo-width':2.4,'text-halo-blur':0.4 }
       });
     }
   }
@@ -217,8 +224,14 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   const hasY = !!(window.Y && window.ywebrtc);
   const ydoc = hasY ? new Y.Doc() : null;
   const provider = hasY && ROOM_ID ? new ywebrtc.WebrtcProvider(ROOM_ID, ydoc) : null;
-  const yFeatures = hasY ? ydoc.getArray('features') : null;
-  const localFeatures = []; // フォールバック
+  const yFeatures = hasY ? ydoc.getArray('features') : null;   // すべての要素（Feature）
+  const yGroups   = hasY ? ydoc.getArray('groupList') : null;  // [{id,name,order,visible}]
+  const localFeatures = [];
+  const localGroupList = [{id:'__ungroup',name:'未分類',order:0,visible:true}];
+
+  function groupsArr(){ return hasY ? yGroups.toArray() : localGroupList; }
+  function setGroups(arr){ if (hasY){ yGroups.delete(0,yGroups.length); arr.forEach(g=>yGroups.push([g])); } else { localGroupList.splice(0,localGroupList.length,...arr); } }
+  if (hasY && yGroups.length===0){ yGroups.push([{id:'__ungroup',name:'未分類',order:0,visible:true}]); }
 
   // ========= レンダリング =========
   const markers = new Map(); // id -> Marker
@@ -235,10 +248,6 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
         <circle cx="12" cy="10" r="2.8" fill="#fff"></circle>
       </svg>`;
     const marker = new maplibregl.Marker({element:el, anchor:'bottom'}).setLngLat(f.geometry.coordinates).addTo(map);
-    if (f.properties?.label){
-      const pop = new maplibregl.Popup({offset:25}).setText(f.properties.label);
-      marker.setPopup(pop);
-    }
     markers.set(f.id, marker);
   }
 
@@ -260,7 +269,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
     for(const f of feats){
       if (f.properties?.visible===false) continue;
       if (f.properties?.kind==='pin'){ addPinMarker(f); if(f.properties?.label){ labelPts.push({type:'Feature',geometry:{type:'Point',coordinates:f.geometry.coordinates},properties:{label:f.properties.label}}); } }
-      else if (f.properties?.kind==='photo'){ addPhotoMarker(f); }
+      else if (f.properties?.kind==='photo'){ addPhotoMarker(f); if(f.properties?.label){ labelPts.push({type:'Feature',geometry:{type:'Point',coordinates:f.geometry.coordinates},properties:{label:f.properties.label}}); } }
       else { try{ draw.add(f); }catch(_){}
         if (f.properties?.label){
           let p; try{ p=f.geometry.type==='LineString'?turf.center(f).geometry:turf.centerOfMass(f).geometry; labelPts.push({type:'Feature',geometry:p,properties:{label:f.properties.label}});}catch(_){}
@@ -290,9 +299,9 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   $('tool-poly').onclick= ()=> { if(!EDITOR_KEY){alert('閲覧専用です。'); return;} setTool('poly'); };
   $('tool-circle').onclick=()=> { if(!EDITOR_KEY){alert('閲覧専用です。'); return;} setTool('circle'); circleCenter=null; };
   $('tool-photo').onclick =()=> { if(!EDITOR_KEY){alert('閲覧専用です。'); return;} $('photo-input').click(); };
-  setTool('select'); // 初期は選択
+  setTool('select');
 
-  // 円：1クリック中心→マウス追従→2クリック確定
+  // 円：1クリック中心→マウス追従→2クリック確定（半径mを属性に保存）
   function updateCirclePreview(center, edge){
     const r = turf.distance(center, edge, {units:'kilometers'});
     const poly = turf.circle(center, r, {steps:64, units:'kilometers'});
@@ -302,9 +311,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
     } else { map.getSource('circle-preview').setData(poly); }
   }
   function clearCirclePreview(){ if (map.getLayer('circle-preview')) map.removeLayer('circle-preview'); if (map.getSource('circle-preview')) map.removeSource('circle-preview'); }
-
   map.on('mousemove', (e)=>{ if(activeTool==='circle' && circleCenter){ updateCirclePreview(circleCenter, [e.lngLat.lng,e.lngLat.lat]); } });
-
   map.on('click', (e)=>{
     if (activeTool==='pin'){
       const label = prompt('ピンのラベル（任意）') || '';
@@ -313,12 +320,11 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
     }
     if (activeTool==='circle'){
       if (!circleCenter){ circleCenter=[e.lngLat.lng,e.lngLat.lat]; updateCirclePreview(circleCenter,circleCenter); return; }
-      // 2クリック目：確定
       const rkm=turf.distance(circleCenter,[e.lngLat.lng,e.lngLat.lat],{units:'kilometers'});
       const poly=turf.circle(circleCenter,rkm,{steps:64,units:'kilometers'});
       clearCirclePreview(); const label=prompt('円のラベル（任意）')||'';
-      const feat={type:'Feature',id:nowId(),geometry:poly.geometry,properties:{kind:'circle',label,visible:true}};
-      circleCenter=null; addFeature(feat); return;
+      const feat={type:'Feature',id:nowId(),geometry:poly.geometry,properties:{kind:'circle',label,visible:true,radius_m:Math.round(rkm*1000)}};
+      circleCenter=null; addFeature(feat); setTool('select'); return;
     }
     if (placingPhoto){
       const feat = {type:'Feature', id:nowId(), geometry:{type:'Point',coordinates:[e.lngLat.lng,e.lngLat.lat]}, properties:{kind:'photo', label:placingPhoto.label||'', thumb:placingPhoto.thumb, visible:true}};
@@ -329,23 +335,36 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   // ライン/ポリゴン：確定時にラベル入力
   map.on('draw.create', (e)=>{
     const f = e.features[0]; if(!f) return;
-    if (f.geometry.type==='Point'){ draw.delete(f.id); return; } // Drawのポイントは未使用
+    if (f.geometry.type==='Point'){ draw.delete(f.id); return; }
     const label = prompt((f.geometry.type==='LineString'?'ライン':'ポリゴン')+'のラベル（任意）') || '';
-    const feat = {type:'Feature', id:nowId(), geometry:f.geometry, properties:{kind:(f.geometry.type==='LineString'?'line':'polygon'), label, visible:true}};
-    draw.delete(f.id); addFeature(feat);
-    setTool('select');
+    const kind = (f.geometry.type==='LineString'?'line':'polygon');
+    const feat = {type:'Feature', id:nowId(), geometry:f.geometry, properties:{kind, label, visible:true}};
+    draw.delete(f.id); addFeature(feat); setTool('select');
   });
 
-  // 写真アップロード
+  // 写真アップロード：EXIF座標を厳密に取得
   $('photo-input').addEventListener('change', async (ev)=>{
     const files=[...ev.target.files];
     for(const file of files){
-      const gps = await exifr.gps(file).catch(()=>null);
+      let lat=null, lon=null;
+      try {
+        const gps1 = await exifr.gps(file); // {latitude, longitude} or null
+        if (gps1 && typeof gps1.latitude==='number' && typeof gps1.longitude==='number'){
+          lat=gps1.latitude; lon=gps1.longitude;
+        } else {
+          const exif = await exifr.parse(file, {gps:true}).catch(()=>null);
+          if (exif && exif.GPSLatitude && exif.GPSLongitude){
+            const toDec = (arr, ref)=> (arr[0]+arr[1]/60+arr[2]/3600) * (ref==='S'||ref==='W'?-1:1);
+            lat = toDec(exif.GPSLatitude, exif.GPSLatitudeRef||'N');
+            lon = toDec(exif.GPSLongitude, exif.GPSLongitudeRef||'E');
+          }
+        }
+      } catch(_) {}
       const img = await fileToImage(file);
       const {thumb,fullURL} = await makeThumb(img, 800, 512);
       const label = file.name.replace(/\.[^.]+$/,'');
-      if (gps && gps.longitude!=null && gps.latitude!=null){
-        const feat = {type:'Feature', id:nowId(), geometry:{type:'Point',coordinates:[gps.longitude,gps.latitude]}, properties:{kind:'photo', label, thumb, visible:true}};
+      if (lat!=null && lon!=null){
+        const feat = {type:'Feature', id:nowId(), geometry:{type:'Point',coordinates:[lon,lat]}, properties:{kind:'photo', label, thumb, visible:true}};
         photosFull.set(feat.id, fullURL); addFeature(feat);
       } else {
         placingPhoto = {thumb, fullURL, label};
@@ -368,12 +387,9 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
     return {thumb, fullURL};
   }
 
-  // ========= 追加/更新/削除（Yjs or ローカル） =========
+  // ========= Features & Groups（保存/更新） =========
   function featsArr(){ return hasY ? yFeatures.toArray() : localFeatures; }
-  function setFeats(newArr){
-    if (hasY){ yFeatures.delete(0, yFeatures.length); newArr.forEach(f=>yFeatures.push([f])); }
-    else { localFeatures.splice(0, localFeatures.length, ...newArr); }
-  }
+  function setFeats(newArr){ if (hasY){ yFeatures.delete(0,yFeatures.length); newArr.forEach(f=>yFeatures.push([f])); } else { localFeatures.splice(0,localFeatures.length,...newArr); } }
   function addFeature(feat){ if (hasY) yFeatures.push([feat]); else localFeatures.push(feat); renderAll(); }
   function updateFeature(id, updater){
     const feats = featsArr();
@@ -386,37 +402,60 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
     feats.splice(idx,1); setFeats(feats); photosFull.delete(id); renderAll();
   }
 
-  // ========= サイドバー（D&D 並び替え／重ねてグループ化） =========
+  // ========= サイドバー（D&D 並び替え／グループ化） =========
+  function ensureGroup(name){
+    const gl = groupsArr();
+    const found = gl.find(g=>g.name===name);
+    if (found) return found.id;
+    const id='g_'+randomKey(8);
+    const maxOrder = Math.max(...gl.map(g=>g.order||0),0);
+    const ng={id,name,order:maxOrder+1,visible:true};
+    const arr=[...gl, ng]; setGroups(arr);
+    return id;
+  }
+  function groupNameById(id){
+    const g = groupsArr().find(x=>x.id===id);
+    return g ? g.name : '未分類';
+  }
   function rebuildSidebar(){
     const feats = featsArr().slice().sort((a,b)=>(a.properties?.order||0)-(b.properties?.order||0));
-    const groups={};
-    feats.forEach(f=>{ const g=f.properties?.group||'未分類'; (groups[g]||(groups[g]=[])).push(f); });
+    const gl = groupsArr().slice().sort((a,b)=>(a.order||0)-(b.order||0));
+    // 未分類が無い場合は付与
+    if (!gl.find(g=>g.id==='__ungroup')) setGroups([{id:'__ungroup',name:'未分類',order:0,visible:true}, ...gl]);
+    const byGroup = new Map(gl.map(g=>[g.id, []]));
+    feats.forEach(f=>{ const gid=f.properties?.groupId||'__ungroup'; (byGroup.get(gid)||byGroup.get('__ungroup')).push(f); });
 
     const list=$('list'); list.innerHTML='';
-    Object.entries(groups).forEach(([gname, arr])=>{
-      const box=document.createElement('div'); box.className='group'; box.dataset.group=gname;
+    gl.forEach(g=>{
+      const box=document.createElement('div'); box.className='group'; box.dataset.gid=g.id;
 
-      const head=document.createElement('div'); head.className='ghead';
-      const title=document.createElement('div'); title.textContent=gname;
+      const head=document.createElement('div'); head.className='ghead'; head.dataset.gid=g.id;
+      const title=document.createElement('div'); title.textContent=g.name; head.appendChild(title);
       const geye=document.createElement('span'); geye.textContent='👁'; geye.style.cursor='pointer';
-      head.appendChild(title); head.appendChild(geye); box.appendChild(head);
+      head.appendChild(geye); box.appendChild(head);
 
-      // グループ可視切替
       geye.onclick=()=>{
+        const arr = (byGroup.get(g.id)||[]);
         const currentVisible = arr.some(f=>f.properties?.visible!==false);
         arr.forEach(f=>updateFeature(f.id, nf=>{ nf.properties.visible = !currentVisible; }));
       };
 
-      const items=document.createElement('div'); items.className='gitems';
-      arr.forEach(f=>{
-        const it=document.createElement('div'); it.className='item'; it.setAttribute('draggable','true'); it.dataset.id=f.id; it.dataset.group=gname;
+      // グループへアイテムをドロップして移動
+      head.addEventListener('dragover', e=>{ e.preventDefault(); });
+      head.addEventListener('drop', e=>{
+        e.preventDefault();
+        const fromId=e.dataTransfer.getData('text/plain'); if(!fromId) return;
+        updateFeature(fromId, nf=>{ nf.properties.groupId = g.id; });
+      });
+
+      const items=document.createElement('div'); items.className='gitems'; items.dataset.gid=g.id;
+
+      (byGroup.get(g.id)||[]).forEach(f=>{
+        const it=document.createElement('div'); it.className='item'; it.setAttribute('draggable','true'); it.dataset.id=f.id; it.dataset.gid=g.id;
         if (f.properties?.visible===false) it.classList.add('hidden');
 
         const eye=document.createElement('span'); eye.textContent=(f.properties?.visible===false)?'🙈':'👁'; eye.className='eye';
-        eye.onclick=()=> updateFeature(f.id, nf=>{
-          const cur = nf.properties?.visible !== false; // 現在の可視状態
-          nf.properties.visible = !cur;
-        });
+        eye.onclick=()=> updateFeature(f.id, nf=>{ const cur = nf.properties?.visible !== false; nf.properties.visible = !cur; });
 
         const name=document.createElement('div'); name.className='name';
         name.textContent=`${kindLabel(f.properties?.kind)}：${f.properties?.label||'(無題)'}`;
@@ -438,43 +477,47 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
         items.appendChild(it);
       });
 
-      // D&D 並び替え／グループ化
+      // D&D 並び替え／重ねて新規グループ化
       let dragId=null;
-      items.addEventListener('dragstart', e=>{ const it=e.target.closest('.item'); if(!it) return; dragId=it.dataset.id; });
+      items.addEventListener('dragstart', e=>{ const it=e.target.closest('.item'); if(!it) return; dragId=it.dataset.id; e.dataTransfer.setData('text/plain', dragId); });
       items.addEventListener('dragover', e=>{ e.preventDefault(); });
       items.addEventListener('drop', e=>{
         e.preventDefault();
-        const fromId=dragId; if(!fromId) return;
+        const fromId=e.dataTransfer.getData('text/plain'); if(!fromId) return;
         const toItem=e.target.closest('.item');
-        const feats = featsArr();
 
-        // 1) どこにドロップしたか
         if (toItem){
           const toId=toItem.dataset.id;
+          const feats = featsArr();
           const fromF = feats.find(f=>f.id===fromId);
           const toF   = feats.find(f=>f.id===toId);
           if (!fromF || !toF) return;
 
-          const fromG = fromF.properties?.group || '未分類';
-          const toG   = toF.properties?.group   || '未分類';
+          const fromG = fromF.properties?.groupId || '__ungroup';
+          const toG   = toF.properties?.groupId   || '__ungroup';
 
           if (fromG === toG){
-            // 同じグループ → 新しいグループを作って両方入れる
-            const newG = 'グループ ' + new Date().toLocaleTimeString();
-            fromF.properties = {...fromF.properties, group:newG};
-            toF.properties   = {...toF.properties,   group:newG};
+            const newName = prompt('新しいグループ名を入力','新規グループ');
+            if (!newName) return;
+            const newGid = ensureGroup(newName);
+            fromF.properties = {...fromF.properties, groupId:newGid};
+            toF.properties   = {...toF.properties,   groupId:newGid};
+            setFeats(feats); renderAll();
           } else {
             // 異なるグループ → そのグループへ移動
-            fromF.properties = {...fromF.properties, group:toG};
+            updateFeature(fromId, nf=>{ nf.properties.groupId = toG; });
           }
-
-          // 並び順は一旦末尾に
-          const maxOrder = Math.max(0, ...feats.map(f=>f.properties?.order||0));
-          fromF.properties.order = maxOrder + 1;
-          setFeats(feats);
-          normalizeOrder(); // DOM順へ正規化
-          renderAll();
+        } else {
+          // 同じグループ内の空白に落ちた → 並び順のみ（DOM順は次の normalizeOrder で）
+          normalizeOrder();
         }
+      });
+
+      // グループ自体へのドロップ（ヘッダ以外のスペース）
+      items.addEventListener('dragover', e=>{ e.preventDefault(); });
+      items.addEventListener('drop', e=>{
+        const fromId=e.dataTransfer.getData('text/plain'); if(!fromId) return;
+        updateFeature(fromId, nf=>{ nf.properties.groupId = g.id; });
       });
 
       box.appendChild(items);
@@ -483,7 +526,6 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   }
 
   function normalizeOrder(){
-    // サイドバーの見た目順に order を振り直す
     const feats = featsArr();
     const list = $('list');
     let order = 0;
@@ -499,8 +541,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
 
   $('btn-add-group').onclick=()=>{
     const name = prompt('新しいグループ名','新しいグループ'); if(!name) return;
-    // 空のグループ枠は作らず、項目が group を持った時点で出現する設計のためガイダンス表示のみ
-    alert('グループ「'+name+'」を作成しました。項目の✏️からラベル末尾に「（'+name+'）」等で識別し、D&Dでまとめてください。');
+    ensureGroup(name); rebuildSidebar();
   };
 
   $('btn-toggle-all').onclick=()=>{
@@ -540,8 +581,79 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
     catch(e){ prompt('コピーできない場合は手動でコピーしてください', url); }
   };
 
+  // ========= エクスポート（FGB & CSV → ZIP） =========
+  $('btn-export').onclick = async ()=>{
+    try{
+      const feats = featsArr();
+      // 種別ごとに抽出
+      const points = feats.filter(f=>f.properties?.kind==='pin' || f.properties?.kind==='photo').map(clone);
+      const lines  = feats.filter(f=>f.properties?.kind==='line').map(clone);
+      const polys  = feats.filter(f=>f.properties?.kind==='polygon').map(clone);
+      const circs  = feats.filter(f=>f.properties?.kind==='circle').map(clone);
+
+      // 付加属性
+      lines.forEach(f=>{ try{ f.properties.length_m = Math.round(turf.length(f,{units:'kilometers'})*1000); }catch{} });
+      polys.forEach(f=>{ try{ f.properties.area_m2 = Math.round(turf.area(f)); }catch{} });
+      // circle は半径_mを既に持つ
+      // pin: CSV用に lon/lat 列を
+      const pinRows = points.map(f=>({label: safe(f.properties?.label), lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1]}));
+      const csv = toCSV(pinRows);
+
+      // FGB 生成（flatgeobuf.serialize を使用）
+      const fgbPoints = toFGB(points);
+      const fgbLines  = toFGB(lines);
+      const fgbPolys  = toFGB(polys);
+      const fgbCircs  = toFGB(circs);
+
+      const nameBase = ts();
+      const zip = new JSZip();
+      if (fgbPoints) zip.file(`${nameBase}_points.fgb`, new Blob([fgbPoints]));
+      if (fgbLines)  zip.file(`${nameBase}_lines.fgb`,  new Blob([fgbLines]));
+      if (fgbPolys)  zip.file(`${nameBase}_polygons.fgb`, new Blob([fgbPolys]));
+      if (fgbCircs)  zip.file(`${nameBase}_circles.fgb`, new Blob([fgbCircs]));
+      zip.file(`${nameBase}_points.csv`, new Blob([csv], {type:'text/csv'}));
+
+      const blob = await zip.generateAsync({type:'blob'});
+
+      // 保存ダイアログ
+      if (window.showSaveFilePicker){
+        const handle = await showSaveFilePicker({
+          suggestedName: `${nameBase}_export.zip`,
+          types:[{description:'ZIP', accept:{'application/zip':['.zip']}}]
+        });
+        const w = await handle.createWritable();
+        await w.write(blob); await w.close();
+        alert('エクスポート完了：'+handle.name);
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a=document.createElement('a'); a.href=url; a.download=`${nameBase}_export.zip`; a.click();
+        setTimeout(()=>URL.revokeObjectURL(url), 3000);
+      }
+    }catch(e){
+      alert('エクスポートでエラー：'+e.message);
+    }
+  };
+
+  function clone(f){ return JSON.parse(JSON.stringify(f)); }
+  function safe(s){ return (s==null?'':String(s)); }
+  function toCSV(rows){
+    if (!rows.length) return 'label,lon,lat\n';
+    const keys = Object.keys(rows[0]);
+    const esc = v => `"${String(v).replace(/"/g,'""')}"`;
+    const lines = [keys.join(',')].concat(rows.map(r=>keys.map(k=>esc(r[k]??'')).join(',')));
+    return lines.join('\n')+'\n';
+  }
+  function toFGB(features){
+    if (!features || features.length===0) return null;
+    if (!window.flatgeobuf || !flatgeobuf.GeoJSON || !flatgeobuf.GeoJSON.serialize){
+      throw new Error('FlatGeobufライブラリが読み込めませんでした');
+    }
+    const fc = {type:'FeatureCollection', features};
+    return flatgeobuf.GeoJSON.serialize(fc); // Uint8Array
+  }
+
   // ====== 監視して再描画（Yjs使用時）======
-  if (hasY){ yFeatures.observeDeep(()=> renderAll()); }
+  if (hasY){ yFeatures.observeDeep(()=> renderAll()); if (yGroups) yGroups.observe(()=> rebuildSidebar()); }
 
   // 初期描画
   renderAll();
