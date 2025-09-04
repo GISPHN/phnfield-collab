@@ -16,7 +16,6 @@
 <script src="https://cdn.jsdelivr.net/npm/yjs@13.6.18/dist/yjs.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/y-webrtc@10.6.3/dist/y-webrtc.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-<!-- 画面キャプチャ -->
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 
 <style>
@@ -50,7 +49,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
 .hidden{opacity:.5}
 #err{display:none;position:fixed;left:12px;top:76px;background:#fee2e2;color:#7f1d1d;border:1px solid #fecaca;border-radius:.5rem;padding:.5rem .75rem;z-index:10}
 #help{position:fixed;left:12px;bottom:12px;background:#fff;border:1px solid var(--line);border-radius:.75rem;padding:.6rem .75rem;font-size:.9rem;color:var(--muted);z-index:2}
-.pin{width:26px;height:26px;transform:translateY(-2px)}
+.pin{transform:translateY(-2px)}
 .photo-thumb{width:64px;height:64px;object-fit:cover;border-radius:.4rem;border:1px solid var(--line);box-shadow:0 1px 2px rgba(0,0,0,.06)}
 #photo-input{display:none}
 #modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:20}
@@ -62,6 +61,15 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   text-shadow:0 0 2px #fff,0 0 2px #fff,0 0 2px #fff,0 0 2px #fff;
   transform: translateY(-2px);
 }
+
+/* スタイルダイアログ */
+#style-dialog{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.45);z-index:50}
+#style-card{background:#fff;border-radius:.8rem;border:1px solid var(--line);padding:14px 16px;width:320px;box-shadow:0 12px 36px rgba(0,0,0,.25)}
+#style-card h3{margin:0 0 8px 0;font-size:16px}
+.form-row{display:flex;align-items:center;justify-content:space-between;margin:8px 0}
+.form-row input[type="color"]{width:48px;height:32px;border:none;background:transparent}
+#val-num{min-width:38px;text-align:right;color:#0f172a}
+.dialog-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
 
 @media (max-width:1100px){
   #map{right:0}
@@ -76,8 +84,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
     <span id="brand">PHN Field Collab</span>
     <span id="subbrand">
       保健師活動支援マップ：開発者
-      <!-- X アイコン -->
-      <svg width="14" height="14" viewBox="0 0 1200 1227" aria-hidden="true"><path d="M714 519l275-319h-130L653 453 478 200H200l300 435L200 1027h130l219-254 194 254h279L714 519zm-96 111l-25-34-242-339h104l195 274 25 34 258 361H1037L618 630z"/></svg>
+      <svg width="14" height="14" viewBox="0 0 1200 1227" aria-hidden="true" style="margin-top:-1px"><path d="M714 519l275-319h-130L653 453 478 200H200l300 435L200 1027h130l219-254 194 254h279L714 519zm-96 111l-25-34-242-339h104l195 274 25 34 258 361H1037L618 630z"/></svg>
       <a href="https://x.com/GISPHN" target="_blank" rel="noopener">GISPHN</a>
     </span>
   </div>
@@ -128,6 +135,26 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   </aside>
 </div>
 
+<!-- スタイルダイアログ -->
+<div id="style-dialog">
+  <div id="style-card">
+    <h3 id="style-title">スタイル</h3>
+    <div class="form-row">
+      <label>色</label>
+      <input id="inp-color" type="color" value="#22c55e"/>
+    </div>
+    <div class="form-row">
+      <label id="val-label">線幅(px)</label>
+      <input id="inp-range" type="range" min="1" max="30" step="1"/>
+      <span id="val-num">3</span>
+    </div>
+    <div class="dialog-actions">
+      <button class="btn" id="btn-style-cancel">キャンセル</button>
+      <button class="btn" id="btn-style-apply">適用</button>
+    </div>
+  </div>
+</div>
+
 <div id="help">①部屋作成 → ②地図選択 → ③選択/ピン/ライン/ポリゴン/円/写真 → ④リンク配布 → ⑤エクスポート / スクショ。</div>
 <div id="err"></div>
 <div id="modal" onclick="this.style.display='none'"><img id="modal-img" alt="photo"/></div>
@@ -158,8 +185,11 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   let map;
   try{
     map=new maplibregl.Map({
-      container:'map', style:EMPTY_STYLE, center:[135.79,34.51], zoom:8.2,
-      attributionControl:false
+      container:'map',
+      style:EMPTY_STYLE,
+      center:[135.79,34.51], zoom:8.2,
+      attributionControl:false,
+      preserveDrawingBuffer:true   // ← スクショ用に必須
     });
   }catch(e){ showErr('Map初期化エラー: '+e.message); return; }
 
@@ -194,24 +224,17 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   const draw=new MapboxDraw({displayControlsDefault:false});
   map.addControl(draw,'top-left');
 
-  // ===== Labels as HTML markers =====
-  const labelMarkers=new Map(); const pinMarkers=new Map(); const photoMarkers=new Map(); const photosFull=new Map();
-  function clearMarkers(){
-    labelMarkers.forEach(m=>m.remove()); labelMarkers.clear();
-    pinMarkers.forEach(m=>m.remove()); pinMarkers.clear();
-    photoMarkers.forEach(m=>m.remove()); photoMarkers.clear();
-  }
-  function addLabelMarker(id, lngLat, text){
-    if(!text) return; const el=document.createElement('div'); el.className='mlabel'; el.textContent=String(text);
-    const m=new maplibregl.Marker({element:el,anchor:'top'}).setLngLat(lngLat).addTo(map); labelMarkers.set(id,m);
-  }
+  // ===== Labels & Markers =====
+  const labelMarkers=new Map(), pinMarkers=new Map(), photoMarkers=new Map(), photosFull=new Map();
+  function clearMarkers(){ labelMarkers.forEach(m=>m.remove()); labelMarkers.clear(); pinMarkers.forEach(m=>m.remove()); pinMarkers.clear(); photoMarkers.forEach(m=>m.remove()); photoMarkers.clear(); }
+  function addLabelMarker(id, lngLat, text){ if(!text) return; const el=document.createElement('div'); el.className='mlabel'; el.textContent=String(text); const m=new maplibregl.Marker({element:el,anchor:'top'}).setLngLat(lngLat).addTo(map); labelMarkers.set(id,m); }
   function addPinMarker(f){
-    const color = f.properties?.styleColor || '#d00';
+    const color=f.properties?.styleColor||'#d00';
+    const size =Number(f.properties?.styleSize||26); // ← サイズ可変
     const el=document.createElement('div');
-    el.innerHTML=`<svg class="pin" viewBox="0 0 24 24" fill="${color}" stroke="#fff" stroke-width="1.5"><path d="M12 22s-6-5.33-6-10a6 6 0 1 1 12 0c0 4.67-6 10-6 10z"></path><circle cx="12" cy="10" r="2.8" fill="#fff"/></svg>`;
+    el.innerHTML=`<svg class="pin" width="${size}" height="${size}" viewBox="0 0 24 24" fill="${color}" stroke="#fff" stroke-width="1.5"><path d="M12 22s-6-5.33-6-10a6 6 0 1 1 12 0c0 4.67-6 10-6 10z"></path><circle cx="12" cy="10" r="2.8" fill="#fff"/></svg>`;
     const m=new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat(f.geometry.coordinates).addTo(map);
-    pinMarkers.set(f.id,m);
-    if(f.properties?.label) addLabelMarker('lbl_'+f.id, f.geometry.coordinates, f.properties.label);
+    pinMarkers.set(f.id,m); if(f.properties?.label) addLabelMarker('lbl_'+f.id, f.geometry.coordinates, f.properties.label);
   }
   function addPhotoMarker(f){
     const el=document.createElement('div'); el.style.display='flex'; el.style.flexDirection='column'; el.style.alignItems='center';
@@ -219,11 +242,10 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
     el.appendChild(img);
     if(f.properties?.label){ const cap=document.createElement('div'); cap.textContent=f.properties.label; cap.style.fontSize='.8rem'; cap.style.marginTop='.2rem'; el.appendChild(cap); }
     img.onclick=()=>{ const full=photosFull.get(f.id)||f.properties.thumb; $('modal-img').src=full; $('modal').style.display='flex'; };
-    const m=new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat(f.geometry.coordinates).addTo(map);
-    photoMarkers.set(f.id,m);
+    const m=new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat(f.geometry.coordinates).addTo(map); photoMarkers.set(f.id,m);
   }
 
-  // ===== Data model (Yjs or local) =====
+  // ===== Data model =====
   const hasY=!!(window.Y&&window.ywebrtc);
   const ydoc=hasY?new Y.Doc():null;
   const provider=hasY&&ROOM_ID?new ywebrtc.WebrtcProvider(ROOM_ID, ydoc):null;
@@ -236,38 +258,26 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   const setGroups=(a)=>{ if(hasY){ yGroups.delete(0,yGroups.length); a.forEach(g=>yGroups.push([g])); } else { localGroupList.splice(0,localGroupList.length,...a); } };
   if(hasY && yGroups.length===0) yGroups.push([{id:'__ungroup',name:'未分類',order:0,visible:true}]);
 
-  // ===== Our render layers (lines/polys) =====
+  // ===== Map layers for lines/polygons =====
   function ensureGeomLayers(){
     if(!map.getSource('geom-src')) map.addSource('geom-src',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
 
-    // lines
     if(!map.getLayer('geom-line')) map.addLayer({
       id:'geom-line', type:'line', source:'geom-src',
       filter:['==',['geometry-type'],'LineString'],
-      paint:{
-        'line-color':['coalesce',['get','styleColor'],'#2563eb'],
-        'line-width':['coalesce',['get','styleWidth'],3]
-      }
+      paint:{ 'line-color':['coalesce',['get','styleColor'],'#2563eb'], 'line-width':['coalesce',['get','styleWidth'],3] }
     });
 
-    // polygon fill
     if(!map.getLayer('geom-fill')) map.addLayer({
       id:'geom-fill', type:'fill', source:'geom-src',
       filter:['==',['geometry-type'],'Polygon'],
-      paint:{
-        'fill-color':['coalesce',['get','styleColor'],'#22c55e'],
-        'fill-opacity':0.2
-      }
+      paint:{ 'fill-color':['coalesce',['get','styleColor'],'#22c55e'], 'fill-opacity':0.2 }
     });
 
-    // polygon outline
     if(!map.getLayer('geom-outline')) map.addLayer({
       id:'geom-outline', type:'line', source:'geom-src',
       filter:['==',['geometry-type'],'Polygon'],
-      paint:{
-        'line-color':['coalesce',['get','styleColor'],'#15803d'],
-        'line-width':['coalesce',['get','styleWidth'],2]
-      }
+      paint:{ 'line-color':['coalesce',['get','styleColor'],'#15803d'], 'line-width':['coalesce',['get','styleWidth'],2] }
     });
   }
 
@@ -289,16 +299,14 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
       if(f.properties?.kind==='pin'){ addPinMarker(f); }
       else if(f.properties?.kind==='photo'){ addPhotoMarker(f); }
       else{ geoFeats.push(f); }
-      if(f.properties?.label){
-        const p=labelCoordFor(f); if(p) addLabelMarker('lbl_'+f.id, p, f.properties.label);
-      }
+      if(f.properties?.label){ const p=labelCoordFor(f); if(p) addLabelMarker('lbl_'+f.id, p, f.properties.label); }
     });
     map.getSource('geom-src').setData({type:'FeatureCollection',features:geoFeats});
     rebuildSidebar();
   }
 
   // ===== Create / Edit =====
-  let tool='select'; let circleCenter=null; let placingPhoto=null;
+  let tool='select', circleCenter=null, placingPhoto=null;
   function setTool(t){ tool=t; ['tool-select','tool-pin','tool-line','tool-poly','tool-circle','tool-photo'].forEach(id=>$(id).classList.toggle('active',id==='tool-'+t)); if(t==='line')draw.changeMode('draw_line_string'); else if(t==='poly')draw.changeMode('draw_polygon'); else draw.changeMode('simple_select'); }
   $('tool-select').onclick=()=>setTool('select');
   $('tool-pin').onclick=()=>{ if(!EDITOR_KEY){alert('閲覧専用です。'); return;} setTool('pin'); };
@@ -319,8 +327,8 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   map.on('click', (e)=>{
     if(tool==='pin'){
       const label=prompt('ピンのラベル（任意）')||'';
-      const lon=e.lngLat.lng, lat=e.lngLat.lat;  // ← 10進数を保存
-      const feat={type:'Feature',id:nowId(),geometry:{type:'Point',coordinates:[lon,lat]},properties:{kind:'pin',label,visible:true,lon,lat,styleColor:'#d00'}};
+      const lon=e.lngLat.lng, lat=e.lngLat.lat;  // 10進数を保存
+      const feat={type:'Feature',id:nowId(),geometry:{type:'Point',coordinates:[lon,lat]},properties:{kind:'pin',label,visible:true,lon,lat,styleColor:'#d00',styleSize:26}};
       addF(feat); return;
     }
     if(tool==='circle'){
@@ -347,9 +355,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
     draw.delete(f.id); addF(feat); setTool('select');
   });
 
-  $('tool-delete').onclick=()=>{ if(!EDITOR_KEY){alert('閲覧専用です。'); return;} const ids=draw.getSelectedIds?draw.getSelectedIds():[]; if(ids.length){draw.trash();} else alert('削除はサイドバーの🗑から行ってください。'); };
-
-  // 写真
+  // 写真アップロード
   $('photo-input').addEventListener('change', async (ev)=>{
     const files=[...ev.target.files];
     for(const file of files){
@@ -357,14 +363,6 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
       try{
         const gps=await exifr.gps(file);
         if(gps && typeof gps.latitude==='number' && typeof gps.longitude==='number'){ lat=gps.latitude; lon=gps.longitude; }
-        else{
-          const ex=await exifr.parse(file,{gps:true}).catch(()=>null);
-          if(ex && ex.GPSLatitude && ex.GPSLongitude){
-            const toDec=(a,ref)=> (a[0]+a[1]/60+a[2]/3600) * (ref==='S'||ref==='W'?-1:1);
-            lat=toDec(ex.GPSLatitude, ex.GPSLatitudeRef||'N');
-            lon=toDec(ex.GPSLongitude, ex.GPSLongitudeRef||'E');
-          }
-        }
       }catch(_){}
       const img=await fileToImage(file);
       const {thumb,fullURL}=await makeThumb(img,800,512);
@@ -409,15 +407,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
       head.appendChild(btns);
 
       geye.onclick=()=>{ (by.get(g.id)||[]).forEach(f=>updF(f.id,n=>{ n.properties.visible = !(n.properties?.visible!==false); })); };
-      gstyle.onclick=()=>{
-        const color=prompt('グループの色（例 #ff0000）','');
-        const widthStr=prompt('線幅(px)（空なら変更しない）','');
-        const width=widthStr?Number(widthStr):NaN;
-        (by.get(g.id)||[]).forEach(f=>updF(f.id,n=>{
-          if(color){ n.properties.styleColor=color; }
-          if(!isNaN(width)){ n.properties.styleWidth=width; }
-        }));
-      };
+      gstyle.onclick=()=> openStyleDialogForGroup(g, by.get(g.id)||[]);
 
       // drop to move group
       head.addEventListener('dragover', e=>e.preventDefault());
@@ -437,14 +427,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
         name.onclick=()=>{ if(f.geometry.type==='Point') map.flyTo({center:f.geometry.coordinates,zoom:18}); else { const b=turf.bbox(f); if(b) map.fitBounds([[b[0],b[1]],[b[2],b[3]]],{padding:40}); } };
 
         const style=document.createElement('button'); style.textContent='🎨'; style.className='btn';
-        style.onclick=()=>{
-          const color=prompt('色（例 #ff0000） 現在:'+ (f.properties?.styleColor||''), f.properties?.styleColor||'');
-          const width=prompt('線幅(px) ※ライン/ポリゴン外枠 現在:'+ (f.properties?.styleWidth??''), String(f.properties?.styleWidth??''));
-          updF(f.id, n=>{
-            if(color) n.properties.styleColor=color;
-            if(width!==null && width!=='') n.properties.styleWidth=Number(width);
-          });
-        };
+        style.onclick=()=> openStyleDialogForItem(f);
 
         const edit=document.createElement('button'); edit.textContent='✏️'; edit.className='btn'; edit.onclick=()=>{ const l=prompt('ラベルを編集', f.properties?.label||'')||''; updF(f.id,n=>{n.properties.label=l;}); };
         const del=document.createElement('button'); del.textContent='🗑'; del.className='btn'; del.onclick=()=>{ if(confirm('削除しますか？')) delF(f.id); };
@@ -452,7 +435,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
         it.appendChild(eye); it.appendChild(name); it.appendChild(style); it.appendChild(edit); it.appendChild(del); items.appendChild(it);
       });
 
-      // D&D 重ねて新グループ
+      // D&D重ね → 新グループ
       items.addEventListener('dragstart', e=>{ const it=e.target.closest('.item'); if(!it)return; e.dataTransfer.setData('text/plain',it.dataset.id); });
       items.addEventListener('dragover', e=>e.preventDefault());
       items.addEventListener('drop', e=>{
@@ -481,7 +464,54 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   $('btn-add-group').onclick=()=>{ const n=prompt('新しいグループ名','新しいグループ'); if(!n) return; ensureGroup(n); rebuildSidebar(); };
   $('btn-toggle-all').onclick=()=>{ const a=featsArr(); const any=a.some(f=>f.properties?.visible!==false); a.forEach(f=>f.properties={...f.properties,visible:!any}); setFeats(a); renderAll(); };
 
-  // ===== Export (GeoJSON + photos CSV + images) =====
+  // ===== スタイルダイアログ（アイテム／グループ） =====
+  let styleTarget=null; // {type:'item'|'group', ids:[...], forPin:boolean}
+  function openStyleDialogForItem(f){
+    styleTarget={type:'item', ids:[f.id], forPin:(f.properties?.kind==='pin')};
+    const color=f.properties?.styleColor || (f.properties?.kind==='line' ? '#2563eb' : '#22c55e');
+    const value = (f.properties?.kind==='pin') ? (f.properties?.styleSize ?? 26) : (f.properties?.styleWidth ?? 3);
+    $('style-title').textContent = `スタイル：${kind(f.properties?.kind)}`;
+    $('inp-color').value = toColorInput(color);
+    $('val-label').textContent = (f.properties?.kind==='pin') ? '大きさ(px)' : '線幅(px)';
+    $('inp-range').value = value;
+    $('val-num').textContent = value;
+    $('style-dialog').style.display='flex';
+  }
+  function openStyleDialogForGroup(g, feats){
+    if(!feats.length){ alert('このグループに項目がありません。'); return; }
+    styleTarget={type:'group', ids:feats.map(f=>f.id), forPin:false};
+    $('style-title').textContent = `グループ一括スタイル：${g.name}`;
+    $('inp-color').value = '#22c55e';
+    $('val-label').textContent = '線幅(px) / ピンは大きさ';
+    $('inp-range').value = 3;
+    $('val-num').textContent = 3;
+    $('style-dialog').style.display='flex';
+  }
+  function toColorInput(c){ // #RRGGBB 固定
+    if(/^#([0-9a-f]{6})$/i.test(c)) return c;
+    const d=document.createElement('div'); d.style.color=c; document.body.appendChild(d);
+    const rgb=getComputedStyle(d).color; document.body.removeChild(d);
+    const m=rgb.match(/(\d+),\s*(\d+),\s*(\d+)/); if(!m) return '#22c55e';
+    const toHex=(n)=>Number(n).toString(16).padStart(2,'0');
+    return '#'+toHex(m[1])+toHex(m[2])+toHex(m[3]);
+  }
+  $('inp-range').addEventListener('input', e=> $('val-num').textContent = e.target.value );
+  $('btn-style-cancel').onclick=()=>{ $('style-dialog').style.display='none'; styleTarget=null; };
+  $('btn-style-apply').onclick=()=>{
+    if(!styleTarget) return;
+    const color=$('inp-color').value;
+    const val=Number($('inp-range').value);
+    styleTarget.ids.forEach(id=>{
+      updF(id, n=>{
+        n.properties.styleColor=color;
+        if (featsArr().find(x=>x.id===id)?.properties?.kind==='pin') n.properties.styleSize=val;
+        else n.properties.styleWidth=val;
+      });
+    });
+    $('style-dialog').style.display='none'; styleTarget=null;
+  };
+
+  // ===== Export =====
   $('btn-export').onclick=async ()=>{
     try{
       const a=featsArr().map(f=>JSON.parse(JSON.stringify(f)));
@@ -494,7 +524,6 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
       lines.forEach(f=>{ try{ f.properties.length_m=Math.round(turf.length(f,{units:'kilometers'})*1000);}catch{} });
       polys.forEach(f=>{ try{ f.properties.area_m2=Math.round(turf.area(f)); }catch{} });
 
-      // GeoJSON stringify
       const fc=(arr)=> JSON.stringify({type:'FeatureCollection',features:arr}, null, 2);
       const zip=new JSZip(); const name=ts();
       if(points.length) zip.file(`${name}_points.geojson`, fc(points));
@@ -502,7 +531,6 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
       if(polys.length)  zip.file(`${name}_polygons.geojson`,fc(polys));
       if(circs.length)  zip.file(`${name}_circles.geojson`, fc(circs));
 
-      // photos
       const rows=[]; const folder=zip.folder('photos'); let i=1;
       for(const f of photos){
         const [lon,lat]=f.geometry.coordinates;
@@ -527,13 +555,33 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   function dataURLtoBlob(dataURL){ const arr=dataURL.split(','), mime=arr[0].match(/:(.*?);/)[1]; const bstr=atob(arr[1]); let n=bstr.length; const u8=new Uint8Array(n); while(n--) u8[n]=bstr.charCodeAt(n); return new Blob([u8],{type:mime}); }
   function toCSV(rows){ if(!rows.length) return 'label,lon,lat,image_file\n'; const keys=Object.keys(rows[0]); const escv=v=>`"${String(v).replace(/"/g,'""')}"`; return [keys.join(',')].concat(rows.map(r=>keys.map(k=>escv(r[k]??'')).join(','))).join('\n')+'\n'; }
 
-  // ===== Screenshot (300dpi ≒ scale 3.125) =====
+  // ===== Screenshot（300dpi相当）=====
   $('btn-screenshot').onclick=async ()=>{
     try{
-      const target=document.getElementById('layout'); // 地図＋右サイド含む
+      const layout=$('layout'), mapEl=$('map');
       const scale=3.125; // 96dpi -> 300dpi
-      const canvas=await html2canvas(target,{backgroundColor:'#ffffff',scale});
-      canvas.toBlob((blob)=>{
+      const rectLayout=layout.getBoundingClientRect();
+      const rectMap=mapEl.getBoundingClientRect();
+
+      // 1) ベースキャンバス作成
+      const out=document.createElement('canvas');
+      out.width=Math.floor(rectLayout.width*scale);
+      out.height=Math.floor(rectLayout.height*scale);
+      const ctx=out.getContext('2d');
+      ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,out.width,out.height);
+
+      // 2) 地図Canvasを直接描画（preserveDrawingBuffer 必須）
+      const mapCanvas = map.getCanvas();
+      const dx=(rectMap.left-rectLayout.left)*scale;
+      const dy=(rectMap.top-rectLayout.top)*scale;
+      const dw=rectMap.width*scale, dh=rectMap.height*scale;
+      ctx.drawImage(mapCanvas, 0,0,mapCanvas.width,mapCanvas.height, dx,dy,dw,dh);
+
+      // 3) UIだけを html2canvas で描画（map要素は無視）
+      const uiCanvas = await html2canvas(layout,{backgroundColor:null,scale,ignoreElements:(el)=> el.id==='map', useCORS:true});
+      ctx.drawImage(uiCanvas, 0,0);
+
+      out.toBlob((blob)=>{
         const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`PHN_Field_Collab_${ts()}.png`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),3000);
       }, 'image/png');
     }catch(e){ alert('スクショでエラー：'+e.message); }
