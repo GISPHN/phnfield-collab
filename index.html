@@ -22,7 +22,7 @@
 :root{--bg:#f8fafc;--line:#e5e7eb;--text:#0f172a;--muted:#64748b;--accent:#2563eb;--panel:#ffffff}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Hiragino Kaku Gothic ProN","Noto Sans CJK JP","Noto Sans",sans-serif;color:var(--text)}
-#topbar{display:flex;gap:.5rem;align-items:center;padding:.6rem .75rem;border-bottom:1px solid var(--line);background:var(--bg);position:relative;z-index:3;flex-wrap:wrap}
+#topbar{display:flex;gap:.5rem;align-items:center;padding:.6rem .75rem;border-bottom:1px solid var(--line);background:var(--bg);position:relative;z-index:6;flex-wrap:wrap}
 #brand{font-weight:700}
 #subbrand{font-size:.9rem;color:#475569;display:flex;gap:.35rem;align-items:center}
 #subbrand a{color:#0ea5e9;text-decoration:none}
@@ -35,7 +35,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
 .muted{color:var(--muted);font-size:.9rem}
 #layout{position:relative;height:calc(100% - 64px)}
 #map{position:absolute;inset:0 340px 0 0}
-#side{position:absolute;right:0;top:0;bottom:0;width:340px;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column}
+#side{position:absolute;right:0;top:0;bottom:0;width:340px;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;z-index:4}
 #side .head{padding:.6rem .75rem;border-bottom:1px solid var(--line);display:flex;gap:.5rem;align-items:center;justify-content:space-between}
 #list{overflow:auto;padding:.5rem}
 .group{border:1px solid var(--line);border-radius:.6rem;margin-bottom:.5rem}
@@ -48,7 +48,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
 .item[draggable="true"]{cursor:grab}
 .hidden{opacity:.5}
 #err{display:none;position:fixed;left:12px;top:76px;background:#fee2e2;color:#7f1d1d;border:1px solid #fecaca;border-radius:.5rem;padding:.5rem .75rem;z-index:10}
-#help{position:fixed;left:12px;bottom:12px;background:#fff;border:1px solid var(--line);border-radius:.75rem;padding:.6rem .75rem;font-size:.9rem;color:var(--muted);z-index:2}
+#help{position:fixed;left:12px;bottom:12px;background:#fff;border:1px solid var(--line);border-radius:.75rem;padding:.6rem .75rem;font-size:.9rem;color:var(--muted);z-index:6;background:rgba(255,255,255,.92);backdrop-filter:saturate(1.1) blur(2px)}
 .pin{transform:translateY(-2px)}
 .photo-thumb{width:64px;height:64px;object-fit:cover;border-radius:.4rem;border:1px solid var(--line);box-shadow:0 1px 2px rgba(0,0,0,.06)}
 #photo-input{display:none}
@@ -71,10 +71,21 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
 #val-num{min-width:38px;text-align:right;color:#0f172a}
 .dialog-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
 
+/* ハザードパネル（左上・折り畳み） */
+#hazard-panel{
+  position:absolute;left:10px;top:70px;width:280px;background:#fff;border:1px solid var(--line);border-radius:.8rem;z-index:6;
+  box-shadow:0 4px 24px rgba(0,0,0,.08);
+}
+#hazard-header{background:#f1f5f9;padding:8px 10px;cursor:pointer;font-weight:700;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+#hazard-body{padding:10px}
+#hazard-body label{display:flex;align-items:center;gap:8px;margin:6px 0}
+#hazard-body img{max-width:100%;margin-top:6px;border:1px solid #ccc;border-radius:.35rem}
+
 @media (max-width:1100px){
   #map{right:0}
   #side{position:static;width:100%;height:300px;border-left:none;border-top:1px solid var(--line)}
   #layout{height:calc(100% - 64px - 300px)}
+  #hazard-panel{top:60px;left:10px;width:70%}
 }
 </style>
 </head>
@@ -133,6 +144,25 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
     </div>
     <div id="list"></div>
   </aside>
+</div>
+
+<!-- ハザードマップパネル -->
+<div id="hazard-panel">
+  <div id="hazard-header">ハザードマップ <span id="hazard-fold">▼</span></div>
+  <div id="hazard-body">
+    <label><input type="checkbox" id="chk-flood">洪水浸水想定区域（想定最大規模）</label>
+    <label><input type="checkbox" id="chk-dosha">土砂災害警戒区域（3種一括）</label>
+    <label style="gap:12px">透明度
+      <input type="range" id="hazard-opacity" min="0" max="1" step="0.05" value="0.6" style="flex:1">
+      <span id="hazard-ov">0.60</span>
+    </label>
+    <div style="margin-top:6px"><strong>凡例（洪水）</strong><br>
+      <img src="https://disaportal.gsi.go.jp/maps/_images/l2_flood_l.png" alt="洪水凡例">
+    </div>
+    <div style="margin-top:6px"><strong>凡例（土砂）</strong><br>
+      <img src="https://disaportal.gsi.go.jp/maps/_images/05_dosha.png" alt="土砂凡例">
+    </div>
+  </div>
 </div>
 
 <!-- スタイルダイアログ -->
