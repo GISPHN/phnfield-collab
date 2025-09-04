@@ -22,6 +22,7 @@
 :root{--bg:#f8fafc;--line:#e5e7eb;--text:#0f172a;--muted:#64748b;--accent:#2563eb;--panel:#ffffff}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Hiragino Kaku Gothic ProN","Noto Sans CJK JP","Noto Sans",sans-serif;color:var(--text)}
+
 /* Topbar */
 #topbar{display:flex;gap:.5rem;align-items:center;padding:.6rem .75rem;border-bottom:1px solid var(--line);background:var(--bg);position:relative;z-index:6;flex-wrap:wrap}
 #brand{font-weight:700}
@@ -30,7 +31,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
 #subbrand a:hover{text-decoration:underline}
 .btn{padding:.5rem .75rem;border:1px solid var(--line);border-radius:.6rem;background:#fff;cursor:pointer;font-size:.95rem}
 .btn.active{border-color:var(--accent);box-shadow:0 0 0 2px rgba(37,99,235,.15) inset}
-.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn:disabled{opacity:.55;cursor:not-allowed}
 .badge{font-size:.82rem;padding:.2rem .55rem;border:1px solid var(--line);border-radius:999px;background:#fff}
 .sep{width:1px;height:28px;background:var(--line);margin:0 .25rem}
 .muted{color:var(--muted);font-size:.9rem}
@@ -38,14 +39,13 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
 /* Layout */
 #layout{position:relative;height:calc(100% - 64px)}
 #map{position:absolute;inset:0 340px 0 0;transition:right .2s}
-body.side-collapsed #map{right:0}
 
 /* Side panel */
-#side{position:absolute;right:0;top:0;bottom:0;width:340px;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;z-index:4;transition:transform .2s}
-body.side-collapsed #side{transform:translateX(100%)}
+#side{position:absolute;right:0;top:0;bottom:0;width:340px;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;z-index:4}
 #side .head{padding:.6rem .75rem;border-bottom:1px solid var(--line);display:flex;gap:.5rem;align-items:center;justify-content:space-between}
 #side .head .fold{cursor:pointer; user-select:none; display:flex; align-items:center; gap:.35rem}
 #list{overflow:auto;padding:.5rem}
+#side.folded #list{display:none} /* ←三角で畳むのは中身だけ */
 .group{border:1px solid var(--line);border-radius:.6rem;margin-bottom:.5rem}
 .group .ghead{display:flex;align-items:center;justify-content:space-between;padding:.45rem .6rem;background:#f9fafb;border-bottom:1px solid var(--line)}
 .group .gitems{padding:.35rem;min-height:16px}
@@ -56,7 +56,7 @@ body.side-collapsed #side{transform:translateX(100%)}
 .item[draggable="true"]{cursor:grab}
 .hidden{opacity:.5}
 
-/* Misc */
+/* Misc UI */
 #err{display:none;position:fixed;left:12px;top:76px;background:#fee2e2;color:#7f1d1d;border:1px solid #fecaca;border-radius:.5rem;padding:.5rem .75rem;z-index:10}
 #help{position:fixed;left:12px;bottom:12px;background:#fff;border:1px solid var(--line);border-radius:.75rem;padding:.6rem .75rem;font-size:.9rem;color:var(--muted);z-index:6;background:rgba(255,255,255,.92);backdrop-filter:saturate(1.1) blur(2px)}
 .pin{transform:translateY(-2px)}
@@ -101,22 +101,21 @@ body.side-collapsed #side{transform:translateX(100%)}
   100%{transform:translate(-50%,-50%) scale(2.6);opacity:0}
 }
 
-/* 作図プレビューを高視認化 */
+/* 作図プレビュー：高視認 */
 .mapboxgl-canvas, .maplibregl-canvas{cursor:grab}
 .maplibregl-draw_polygon .maplibregl-canvas,
-.maplibregl-draw_line_string .maplibregl-canvas{cursor:url('data:image/svg+xml;utf8,\
+.maplibregl-draw_line_string .maplibregl-canvas{
+  cursor:url('data:image/svg+xml;utf8,\
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24">\
 <text x="4" y="18" font-size="20" font-family="Arial" fill="black">+</text>\
-</svg>') 12 12, crosshair;}
-
-.mapbox-gl-draw_polygon,
-.mapbox-gl-draw_line{ /* 破線: 太く・濃く */
-  stroke:#0f172a !important;
-  stroke-width:3px !important;
-  stroke-dasharray:3,2 !important;
+</svg>') 12 12, crosshair;
+}
+.mapbox-gl-draw_polygon, .mapbox-gl-draw_line{
+  stroke:#0f172a !important; stroke-width:3px !important; stroke-dasharray:3,2 !important;
 }
 .mapbox-gl-draw_polygon{ fill:rgba(15,23,42,.08) !important; }
 
+/* クリック可能 */
 button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .ghead{cursor:pointer}
 .maplibregl-ctrl-group button{cursor:pointer}
 
@@ -160,7 +159,7 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
   <span class="sep"></span>
 
   <button class="btn" id="btn-make-room">部屋を作成</button>
-  <button class="btn" id="btn-make-editor">編集リンクを作成</button>
+  <button class="btn" id="btn-make-editor" title="部屋作成後に有効">編集リンクを作成</button>
   <button class="btn" id="btn-copy-view">閲覧リンクをコピー</button>
   <button class="btn" id="btn-export">エクスポート</button>
   <button class="btn" id="btn-screenshot">スクショ</button>
@@ -173,13 +172,13 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
 
 <div id="layout">
   <div id="map"></div>
-  <aside id="side">
+  <aside id="side" class="">
     <div class="head">
       <div class="fold" id="side-fold"><span id="side-fold-icon">▼</span><strong>レイヤ一覧</strong></div>
       <div style="display:flex;gap:.4rem">
-        <button class="btn" id="btn-add-group">グループ追加</button>
-        <button class="btn" id="btn-bulk-style">一括スタイル</button>
-        <button class="btn" id="btn-toggle-all">全表示/非表示</button>
+        <button class="btn" id="btn-add-group" title="編集モードで有効">グループ追加</button>
+        <button class="btn" id="btn-bulk-style" title="編集モードで有効">一括スタイル</button>
+        <button class="btn" id="btn-toggle-all" title="編集モードで有効">全表示/非表示</button>
       </div>
     </div>
     <div id="list"></div>
@@ -225,7 +224,7 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
   </div>
 </div>
 
-<div id="help">①部屋作成 → ②地図選択 → ③選択/ピン/ライン/ポリゴン/円/写真 → ④リンク配布 → ⑤エクスポート / スクショ。</div>
+<div id="help">①部屋作成 → ②編集リンク → ③選択/ピン/ライン/ポリゴン/円/写真 → ④リンク配布 → ⑤エクスポート / スクショ。</div>
 <div id="err"></div>
 <div id="modal" onclick="this.style.display='none'"><img id="modal-img" alt="photo"/></div>
 <script>
@@ -239,25 +238,35 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
   const rand=(n=12)=>{const a=new Uint8Array(n); crypto.getRandomValues(a); return Array.from(a,v=>base62[v%62]).join('');};
   const nowId=()=> 'id_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
   const pad=(n)=>String(n).padStart(2,'0');
-  const ts=()=>{ const d=new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`; };
 
-  // ===== URL / 権限 =====
-  const H=getHash(); let ROOM_ID=H.get('r')||''; let EDITOR_KEY=H.get('k')||''; const READ_ONLY=!EDITOR_KEY;
-  $('role-badge').textContent=READ_ONLY?'閲覧専用':'編集可'; $('room-pill').textContent='room: '+(ROOM_ID||'-');
-  const ensureRoom=(q)=>{let r=q.get('r'); if(!r){ r=rand(12); q.set('r',r);} return r;};
-  const viewURL=()=>{ const q=getHash(); ensureRoom(q); q.delete('k'); q.delete('state'); return location.origin+location.pathname+'#'+q.toString(); };
-  const editURL=()=>{ const q=getHash(); ensureRoom(q); q.set('k',rand(16)); q.delete('state'); return location.origin+location.pathname+'#'+q.toString(); };
+  // ===== URL / 権限（部屋→編集の順序を強制） =====
+  let H=getHash(); let ROOM_ID=H.get('r')||''; let EDITOR_KEY=H.get('k')||'';
+  const allowEdit = ()=> Boolean(ROOM_ID && EDITOR_KEY);
+  function updateRoleUI(){
+    $('role-badge').textContent = allowEdit() ? '編集可' : '閲覧専用';
+    $('room-pill').textContent = 'room: ' + (ROOM_ID||'-');
+    // 編集系ボタンの有効/無効
+    const toolIds=['tool-pin','tool-line','tool-poly','tool-circle','tool-photo','btn-add-group','btn-bulk-style','btn-toggle-all'];
+    toolIds.forEach(id=>{ const el=$(id); if(!el) return; el.disabled = !allowEdit(); });
+    // 「編集リンク作成」は部屋が無ければ無効
+    $('btn-make-editor').disabled = !ROOM_ID;
+  }
+  updateRoleUI();
 
-  // 閲覧モードは編集UIをロック
-  const EDIT_BUTTON_IDS = ['tool-pin','tool-line','tool-poly','tool-circle','tool-photo','btn-add-group','btn-bulk-style','btn-toggle-all'];
-  EDIT_BUTTON_IDS.forEach(id=>{ const el=$(id); if(!el) return; el.disabled = READ_ONLY; if(READ_ONLY) el.title = (el.title||'') + '（閲覧中は無効）'; });
+  // URLから再読込無しで状態反映
+  window.addEventListener('hashchange', ()=>{
+    H=getHash(); ROOM_ID=H.get('r')||''; EDITOR_KEY=H.get('k')||'';
+    updateRoleUI(); renderAll();
+  });
 
-  // サイドパネル（▼で折り畳み）
-  const sideListEl=$('list'); let sideCollapsed=false;
+  // 閲覧URL作成
+  const viewURL=()=>{ const q=getHash(); if(!q.get('r')) q.set('r',rand(12)); q.delete('k'); q.delete('state'); return location.origin+location.pathname+'#'+q.toString(); };
+
+  // === サイドパネル（三角折り畳み：ヘッダは残す） ===
+  const sideEl=$('side');
   $('side-fold').onclick=()=>{
-    sideCollapsed=!sideCollapsed;
-    if(sideCollapsed){ document.body.classList.add('side-collapsed'); $('side-fold-icon').textContent='▲'; }
-    else{ document.body.classList.remove('side-collapsed'); $('side-fold-icon').textContent='▼'; }
+    sideEl.classList.toggle('folded');
+    $('side-fold-icon').textContent = sideEl.classList.contains('folded') ? '▲' : '▼';
   };
 
   // ===== Map =====
@@ -273,11 +282,11 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
     });
   }catch(e){ showErr('Map初期化エラー: '+e.message); return; }
 
-  // マップのカーソル：通常＝grab、ドラッグ中＝grabbing
+  // カーソル：移動で grab / grabbing
   map.on('mousedown',()=>{ map.getCanvas().style.cursor='grabbing'; });
   map.on('mouseup',()=>{ map.getCanvas().style.cursor='grab'; });
 
-  // 3D風操作
+  // 3D風
   map.dragRotate.enable(); map.touchPitch.enable();
 
   // Basemap
@@ -314,7 +323,7 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
   map.addControl(new maplibregl.NavigationControl({showCompass:true,visualizePitch:true,showZoom:true}),'top-right');
   map.addControl(new maplibregl.ScaleControl({maxWidth:150,unit:'metric'}),'top-right');
 
-  // === 現在地（青丸＋精度円＋パルス） ===
+  // 現在地コントロール
   class LocateControl {
     onAdd(map){
       this._map=map;
@@ -348,7 +357,7 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
   }
   map.addControl(new LocateControl(),'top-right');
 
-  // === ハザード ===
+  // ハザード
   function ensureHazardSources(){
     if(!map.getSource('flood')){
       map.addSource('flood',{type:'raster',tiles:['https://disaportaldata.gsi.go.jp/raster/01_flood_l2_shinsuishin_data/{z}/{x}/{y}.png'],tileSize:256});
@@ -367,17 +376,7 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
   $('chk-dosha').addEventListener('change',e=>{ ['dosha0','dosha1','dosha2'].forEach(id=> map.setLayoutProperty(id,'visibility', e.target.checked?'visible':'none')); });
   $('hazard-opacity').addEventListener('input',e=>{ const o=+e.target.value; $('hazard-ov').textContent=o.toFixed(2); if(map.getLayer('flood')) map.setPaintProperty('flood','raster-opacity',o); ['dosha0','dosha1','dosha2'].forEach(id=> map.getLayer(id)&&map.setPaintProperty(id,'raster-opacity',o)); });
 
-  // ===== Draw & Feature 管理 =====
-  const draw=new MapboxDraw({displayControlsDefault:false});
-  map.addControl(draw,'top-left');
-
-  // カーソル：追加時は「＋」に
-  function setCursorPlus(on){
-    const dataURI = "url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2224%22 height=%2224%22><text x=%224%22 y=%2218%22 font-size=%2220%22 font-family=%22Arial%22 fill=%22black%22>+</text></svg>') 12 12, crosshair";
-    map.getCanvas().style.cursor = on ? dataURI : 'grab';
-  }
-
-  // 共有ストレージ（Yjs またはローカル）
+  // 共有ストレージ（Yjs or ローカル）
   const hasY=!!(window.Y&&window.ywebrtc);
   const ydoc=hasY?new Y.Doc():null;
   const provider=hasY&&ROOM_ID?new ywebrtc.WebrtcProvider(ROOM_ID, ydoc):null;
@@ -393,11 +392,12 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
   const setGroups=(arr)=>{ if(hasY){ yGroups.delete(0,yGroups.length); arr.forEach(g=>yGroups.push([g])); } else { localGroups.splice(0,localGroups.length,...arr); } };
   if(hasY && yGroups && yGroups.length===0) yGroups.push([{id:'__ungroup',name:'未分類',order:0,visible:true}]);
 
-  function addF(f){ if(READ_ONLY) return alert('閲覧モードでは追加できません'); if(hasY) yFeatures.push([f]); else localFeatures.push(f); renderAll(); }
-  function updF(id,fn){ if(READ_ONLY) return alert('閲覧モードでは編集できません'); const a=featsArr(); const i=a.findIndex(x=>x.id===id); if(i<0)return; const n=structuredClone(a[i]); fn(n); a[i]=n; setFeats(a); renderAll(); }
-  function delF(id){ if(READ_ONLY) return alert('閲覧モードでは削除できません'); const a=featsArr(); const i=a.findIndex(x=>x.id===id); if(i<0)return; a.splice(i,1); setFeats(a); renderAll(); }
+  // 編集ガード付き
+  function addF(f){ if(!allowEdit()) return alert('まず「部屋を作成」→「編集リンクを作成」してください'); if(hasY) yFeatures.push([f]); else localFeatures.push(f); renderAll(); }
+  function updF(id,fn){ if(!allowEdit()) return alert('編集リンクを作成してください'); const a=featsArr(); const i=a.findIndex(x=>x.id===id); if(i<0)return; const n=structuredClone(a[i]); fn(n); a[i]=n; setFeats(a); renderAll(); }
+  function delF(id){ if(!allowEdit()) return alert('編集リンクを作成してください'); const a=featsArr(); const i=a.findIndex(x=>x.id===id); if(i<0)return; a.splice(i,1); setFeats(a); renderAll(); }
 
-  // マーカー群
+  // マーカー系
   const labelMarkers=new Map(), pinMarkers=new Map(), photoMarkers=new Map(), photosFull=new Map();
   function clearMarkers(){ labelMarkers.forEach(m=>m.remove()); labelMarkers.clear(); pinMarkers.forEach(m=>m.remove()); pinMarkers.clear(); photoMarkers.forEach(m=>m.remove()); photoMarkers.clear(); }
   function addLabelMarker(id, lngLat, text){ if(!text) return; const el=document.createElement('div'); el.className='mlabel'; el.textContent=String(text); labelMarkers.set(id,new maplibregl.Marker({element:el,anchor:'top'}).setLngLat(lngLat).addTo(map)); }
@@ -407,24 +407,25 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
   function ensureGeomLayers(){ if(!map.getSource('geom-src')) map.addSource('geom-src',{type:'geojson',data:{type:'FeatureCollection',features:[]}}); if(!map.getLayer('geom-line')) map.addLayer({id:'geom-line',type:'line',source:'geom-src',filter:['==',['geometry-type'],'LineString'],paint:{'line-color':['coalesce',['get','styleColor'],'#2563eb'],'line-width':['coalesce',['get','styleWidth'],3]}}); if(!map.getLayer('geom-fill')) map.addLayer({id:'geom-fill',type:'fill',source:'geom-src',filter:['==',['geometry-type'],'Polygon'],paint:{'fill-color':['coalesce',['get','styleColor'],'#22c55e'],'fill-opacity':0.2}}); if(!map.getLayer('geom-outline')) map.addLayer({id:'geom-outline',type:'line',source:'geom-src',filter:['==',['geometry-type'],'Polygon'],paint:{'line-color':['coalesce',['get','styleColor'],'#15803d'],'line-width':['coalesce',['get','styleWidth'],2]}}); }
   function renderAll(){ const feats=featsArr(); clearMarkers(); ensureGeomLayers(); const geo=[]; feats.forEach(f=>{ if(f.properties?.visible===false) return; if(f.properties?.kind==='pin') addPinMarker(f); else if(f.properties?.kind==='photo') addPhotoMarker(f); else geo.push(f); if(f.properties?.label){ const p=labelCoordFor(f); if(p) addLabelMarker('lbl_'+f.id,p,f.properties.label); } }); map.getSource('geom-src').setData({type:'FeatureCollection',features:geo}); rebuildSidebar(); }
 
-  // ===== ツール（選択/ピン/ライン/ポリゴン/円/写真） =====
+  // ツール（選択/ピン/ライン/ポリ/円/写真）
   let tool='select', pinHandler=null, circleState=null, moveHandler=null, clickHandler=null;
+  function setCursorPlus(on){
+    const dataURI = "url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2224%22 height=%2224%22><text x=%224%22 y=%2218%22 font-size=%2220%22 font-family=%22Arial%22 fill=%22black%22>+</text></svg>') 12 12, crosshair";
+    map.getCanvas().style.cursor = on ? dataURI : 'grab';
+  }
   function setTool(t){
-    if(READ_ONLY && t!=='select'){ alert('閲覧モードでは編集できません'); t='select'; }
+    if(!allowEdit() && t!=='select'){ alert('まず「部屋を作成」→「編集リンクを作成」してください'); t='select'; }
     tool=t;
     ['tool-select','tool-pin','tool-line','tool-poly','tool-circle','tool-photo'].forEach(id=>$(''+id).classList.remove('active'));
     $('tool-'+t).classList.add('active');
-    // カーソル設定
-    setCursorPlus(t!=='select' && t!=='photo' ? true : (t==='pin' || t==='circle' || t==='line' || t==='poly'));
+    setCursorPlus(t!=='select' && t!=='photo');
     if(t==='select') map.getCanvas().style.cursor='grab';
 
-    // 既存ハンドラ解除
     if(pinHandler){ map.off('click', pinHandler); pinHandler=null; }
     if(moveHandler){ map.off('mousemove', moveHandler); moveHandler=null; }
     if(clickHandler){ map.off('click', clickHandler); clickHandler=null; }
     removeCirclePreview();
 
-    // Drawモード切替
     if(t==='select'){ draw.changeMode('simple_select'); return; }
     if(t==='line'){   draw.changeMode('draw_line_string'); return; }
     if(t==='poly'){   draw.changeMode('draw_polygon'); return; }
@@ -445,8 +446,7 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
       clickHandler=(e)=>{
         const pt=e.lngLat.toArray();
         if(!circleState.center){
-          circleState.center=pt;
-          addCirclePreview(pt,1);
+          circleState.center=pt; addCirclePreview(pt,1);
         }else{
           const r_m=turf.distance(circleState.center, pt, {units:'kilometers'})*1000;
           const poly=turf.circle(circleState.center, r_m, {steps:64,units:'meters'});
@@ -461,8 +461,7 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
         const r_m=turf.distance(circleState.center, e.lngLat.toArray(), {units:'kilometers'})*1000;
         updateCirclePreview(circleState.center, r_m);
       };
-      map.on('click', clickHandler);
-      map.on('mousemove', moveHandler);
+      map.on('click', clickHandler); map.on('mousemove', moveHandler);
       return;
     }
     if(t==='photo'){ $('photo-input').click(); return; }
@@ -470,7 +469,7 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
   ['select','pin','line','poly','circle','photo'].forEach(k=>{$('tool-'+k).onclick=()=>setTool(k);});
   setTool('select');
 
-  // 円プレビュー（高視認化：濃い線＋外枠）
+  // 円プレビュー（濃線＋白縁）
   function addCirclePreview(center,r_m){
     const poly=turf.circle(center, r_m, {steps:64,units:'meters'});
     if(!map.getSource('circle-prev')) map.addSource('circle-prev',{type:'geojson',data:poly}); else map.getSource('circle-prev').setData(poly);
@@ -486,7 +485,7 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
   function updateCirclePreview(center,r_m){ const poly=turf.circle(center, r_m, {steps:64,units:'meters'}); if(map.getSource('circle-prev')) map.getSource('circle-prev').setData(poly); }
   function removeCirclePreview(){ ['circle-prev-outline','circle-prev-line'].forEach(id=>{ if(map.getLayer(id)) map.removeLayer(id); }); if(map.getSource('circle-prev')) map.removeSource('circle-prev'); }
 
-  // Draw 完了（ライン/ポリゴン）
+  // Draw 完了
   map.on('draw.create',(e)=>{ const f=e.features[0]; if(!f) return; if(f.geometry.type==='Point'){ draw.delete(f.id); return; } const label=prompt('ラベル（任意）')||''; const kind=(f.geometry.type==='LineString'?'line':'polygon'); addF({type:'Feature',id:nowId(),geometry:f.geometry,properties:{kind,label,visible:true,styleColor:(kind==='line')?'#2563eb':'#22c55e',styleWidth:3}}); draw.delete(f.id); });
 
   // 写真
@@ -513,7 +512,7 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
   });
   function createThumb(src,maxW){ return new Promise(res=>{ const img=new Image(); img.crossOrigin='anonymous'; img.onload=()=>{ const s=Math.min(1,maxW/img.width); const w=img.width*s, h=img.height*s; const c=document.createElement('canvas'); c.width=w; c.height=h; c.getContext('2d').drawImage(img,0,0,w,h); res(c.toDataURL('image/jpeg',0.75)); }; img.src=src; }); }
 
-  // ====== グループ & サイドバー ======
+  // グループ & サイドバー
   function ensureGroup(name){ const gl=groupsArr(); const ex=gl.find(g=>g.name===name); if(ex) return ex.id; const id='g_'+rand(8); const max=Math.max(0,...gl.map(g=>g.order||0)); const ng={id,name,order:max+1,visible:true}; setGroups([...gl,ng]); return id; }
 
   function rebuildSidebar(){
@@ -527,7 +526,6 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
     gl.sort((a,b)=>(a.order||0)-(b.order||0)).forEach(g=>{
       const wrap=document.createElement('div'); wrap.className='group'; wrap.dataset.gid=g.id;
 
-      // group head
       const head=document.createElement('div'); head.className='ghead';
       const title=document.createElement('span'); title.textContent=g.name||'グループ';
 
@@ -545,32 +543,28 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
       head.appendChild(title); head.appendChild(paint); head.appendChild(eye);
       wrap.appendChild(head);
 
-      // items
       const items=document.createElement('div'); items.className='gitems';
       (by.get(g.id)||[]).forEach(f=>{
         const it=document.createElement('div'); it.className='item'; it.draggable=true; it.dataset.fid=f.id;
 
-        // DnD：レイヤ→レイヤ（重ねる）→ 両方を新グループ
         it.ondragstart=(ev)=>{ ev.dataTransfer.setData('text/plain', f.id); };
         it.ondragover=(ev)=>ev.preventDefault();
-        it.ondrop=(ev)=>{ ev.preventDefault(); const fromId=ev.dataTransfer.getData('text/plain'); if(!fromId || fromId===f.id) return;
-          const name=prompt('新しいグループ名'); if(!name) return; moveToNewGroup([fromId, f.id], name); };
+        it.ondrop=(ev)=>{ ev.preventDefault(); const fromId=ev.dataTransfer.getData('text/plain'); if(!fromId || fromId===f.id) return; const name=prompt('新しいグループ名'); if(!name) return; moveToNewGroup([fromId, f.id], name); };
 
         const eye=document.createElement('span'); eye.className='eye'; eye.textContent=f.properties?.visible===false?'🙈':'👁';
         eye.onclick=(ev)=>{ ev.stopPropagation(); updF(f.id,n=>{ n.properties.visible=!n.properties.visible; }); };
 
         const nm=document.createElement('span'); nm.className='name'; nm.textContent=f.properties?.label||f.properties?.kind||'obj';
-        // クリックでズーム
-        nm.onclick=()=> zoomToFeature(f);
+        nm.onclick=()=> zoomToFeature(f); // ← クリックでズーム復活
 
         const edit=document.createElement('span'); edit.className='edit'; edit.textContent='✏️';
-        edit.onclick=(ev)=>{ ev.stopPropagation(); if(READ_ONLY) return alert('閲覧モードでは編集できません'); const v=prompt('ラベルを編集', f.properties?.label||''); if(v===null) return; updF(f.id,n=>{ n.properties.label=v; }); };
+        edit.onclick=(ev)=>{ ev.stopPropagation(); if(!allowEdit()) return alert('編集リンクを作成してください'); const v=prompt('ラベルを編集', f.properties?.label||''); if(v===null) return; updF(f.id,n=>{ n.properties.label=v; }); };
 
         const paintI=document.createElement('span'); paintI.className='paint'; paintI.textContent='🎨';
         paintI.onclick=(ev)=>{ ev.stopPropagation(); openStyleDialogFor([f.id], f.properties.kind==='pin'); };
 
         const del=document.createElement('span'); del.className='del'; del.textContent='🗑';
-        del.onclick=(ev)=>{ ev.stopPropagation(); if(READ_ONLY) return alert('閲覧モードでは削除できません'); if(confirm('削除しますか？')) delF(f.id); };
+        del.onclick=(ev)=>{ ev.stopPropagation(); if(!allowEdit()) return alert('編集リンクを作成してください'); if(confirm('削除しますか？')) delF(f.id); };
 
         it.appendChild(eye); it.appendChild(nm); it.appendChild(edit); it.appendChild(paintI); it.appendChild(del);
         items.appendChild(it);
@@ -586,24 +580,23 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
     setFeats(arr); rebuildSidebar();
   }
 
-  // クリックでズームするユーティリティ
   function zoomToFeature(f){
     try{
       if(f.geometry.type==='Point'){
         map.flyTo({center:f.geometry.coordinates, zoom:17});
       }else{
-        const b=turf.bbox(f); // [minX,minY,maxX,maxY]
+        const b=turf.bbox(f);
         map.fitBounds([[b[0],b[1]],[b[2],b[3]]],{padding:60, maxZoom:18});
       }
     }catch(e){ console.warn('zoom failed', e); }
   }
 
   // 追加ボタン群
-  $('btn-add-group').onclick=()=>{ if(READ_ONLY) return alert('閲覧モードでは編集できません'); const name=prompt('グループ名'); if(!name) return; ensureGroup(name); rebuildSidebar(); };
-  $('btn-bulk-style').onclick=()=>{ const ids=featsArr().map(f=>f.id); if(!ids.length) return alert('対象のレイヤがありません'); openStyleDialogFor(ids,false,true); };
-  $('btn-toggle-all').onclick=()=>{ const feats=structuredClone(featsArr()); const anyHidden=feats.some(f=>f.properties?.visible===false); feats.forEach(f=>{ f.properties={...(f.properties||{}), visible:anyHidden}; }); setFeats(feats); };
+  $('btn-add-group').onclick=()=>{ if(!allowEdit()) return alert('まず「部屋を作成」→「編集リンクを作成」してください'); const name=prompt('グループ名'); if(!name) return; ensureGroup(name); rebuildSidebar(); };
+  $('btn-bulk-style').onclick=()=>{ if(!allowEdit()) return alert('編集リンクを作成してください'); const ids=featsArr().map(f=>f.id); if(!ids.length) return alert('対象のレイヤがありません'); openStyleDialogFor(ids,false,true); };
+  $('btn-toggle-all').onclick=()=>{ if(!allowEdit()) return alert('編集リンクを作成してください'); const feats=structuredClone(featsArr()); const anyHidden=feats.some(f=>f.properties?.visible===false); feats.forEach(f=>{ f.properties={...(f.properties||{}), visible:anyHidden}; }); setFeats(feats); };
 
-  // スタイルダイアログ（複数ID）
+  // スタイルダイアログ
   let styleTarget=null;
   function openStyleDialogFor(ids, isPinExplicit=false, mixed=false){
     styleTarget={ids,mixed};
@@ -630,12 +623,29 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
     $('style-dialog').style.display='none'; styleTarget=null;
   };
 
-  // 初期描画 & 同期
+  // 初期描画
   renderAll();
   if(hasY && yFeatures){ yFeatures.observe(()=>renderAll()); }
-  // === リンク発行 ===
-  $('btn-make-room').onclick=()=>{ const q=getHash(); q.set('r',rand(12)); q.delete('k'); setHash(q); location.reload(); };
-  $('btn-make-editor').onclick=()=>{ const q=getHash(); ensureRoom(q); q.set('k',rand(16)); setHash(q); navigator.clipboard.writeText(location.href).then(()=>alert('編集リンクをコピーしました')); location.reload(); };
+  // === リンク発行（順序を強制） ===
+  $('btn-make-room').onclick=()=>{
+    const q=getHash();
+    q.set('r',rand(12)); // 新しいroom
+    q.delete('k');       // 編集キーは一旦消す
+    setHash(q); // リロード不要
+    // 内部状態更新
+    H=q; ROOM_ID=q.get('r'); EDITOR_KEY=''; updateRoleUI();
+    alert('部屋を作成しました。次に「編集リンクを作成」を押してください。');
+  };
+
+  $('btn-make-editor').onclick=()=>{
+    const q=getHash();
+    if(!q.get('r')){ alert('先に「部屋を作成」してください'); return; }
+    q.set('k',rand(16));
+    setHash(q);
+    H=q; ROOM_ID=q.get('r'); EDITOR_KEY=q.get('k'); updateRoleUI();
+    navigator.clipboard.writeText(location.href).then(()=>alert('編集リンクをコピーしました'));
+  };
+
   $('btn-copy-view').onclick=()=>{ navigator.clipboard.writeText(viewURL()).then(()=>alert('閲覧用リンクをコピーしました')); };
 
   // === エクスポート（GeoJSON/zip） ===
