@@ -24,7 +24,12 @@
 html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Hiragino Kaku Gothic ProN","Noto Sans CJK JP","Noto Sans",sans-serif;color:var(--text)}
 
 /* Topbar */
-#topbar{display:flex;gap:.5rem;align-items:center;padding:.6rem .75rem;border-bottom:1px solid var(--line);background:var(--bg);position:relative;z-index:6;flex-wrap:wrap}
+#topbar{
+  display:flex;gap:.5rem;align-items:center;padding:.6rem .75rem;
+  border-bottom:1px solid var(--line);background:var(--bg);
+  position:relative; z-index:1000; /* ← 最前面にしてクリック可 */
+  flex-wrap:wrap
+}
 #brand{font-weight:700}
 #subbrand{font-size:.9rem;color:#475569;display:flex;gap:.35rem;align-items:center}
 #subbrand a{color:#0ea5e9;text-decoration:none}
@@ -38,14 +43,21 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
 
 /* Layout */
 #layout{position:relative;height:calc(100% - 64px)}
-#map{position:absolute;inset:0 340px 0 0;transition:right .2s}
+#map{
+  position:absolute;inset:0 340px 0 0;transition:right .2s;
+  z-index:1; /* ← 背面に固定（UIより下） */
+}
 
 /* Side panel */
-#side{position:absolute;right:0;top:0;bottom:0;width:340px;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;z-index:4}
+#side{
+  position:absolute;right:0;top:0;bottom:0;width:340px;background:var(--panel);
+  border-left:1px solid var(--line);display:flex;flex-direction:column;z-index:900
+}
 #side .head{padding:.6rem .75rem;border-bottom:1px solid var(--line);display:flex;gap:.5rem;align-items:center;justify-content:space-between}
 #side .head .fold{cursor:pointer; user-select:none; display:flex; align-items:center; gap:.35rem}
 #list{overflow:auto;padding:.5rem}
-#side.folded #list{display:none} /* ←三角で畳むのは中身だけ */
+#side.folded #list{display:none} /* ← 中身だけ畳む。三角は残す */
+
 .group{border:1px solid var(--line);border-radius:.6rem;margin-bottom:.5rem}
 .group .ghead{display:flex;align-items:center;justify-content:space-between;padding:.45rem .6rem;background:#f9fafb;border-bottom:1px solid var(--line)}
 .group .gitems{padding:.35rem;min-height:16px}
@@ -57,12 +69,12 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
 .hidden{opacity:.5}
 
 /* Misc UI */
-#err{display:none;position:fixed;left:12px;top:76px;background:#fee2e2;color:#7f1d1d;border:1px solid #fecaca;border-radius:.5rem;padding:.5rem .75rem;z-index:10}
+#err{display:none;position:fixed;left:12px;top:76px;background:#fee2e2;color:#7f1d1d;border:1px solid #fecaca;border-radius:.5rem;padding:.5rem .75rem;z-index:1100}
 #help{position:fixed;left:12px;bottom:12px;background:#fff;border:1px solid var(--line);border-radius:.75rem;padding:.6rem .75rem;font-size:.9rem;color:var(--muted);z-index:6;background:rgba(255,255,255,.92);backdrop-filter:saturate(1.1) blur(2px)}
 .pin{transform:translateY(-2px)}
 .photo-thumb{width:64px;height:64px;object-fit:cover;border-radius:.4rem;border:1px solid var(--line);box-shadow:0 1px 2px rgba(0,0,0,.06)}
 #photo-input{display:none}
-#modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:20}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:1200}
 #modal img{max-width:90vw;max-height:90vh;border-radius:.5rem;background:#000}
 
 /* HTMLラベル */
@@ -73,7 +85,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
 }
 
 /* スタイルダイアログ */
-#style-dialog{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.45);z-index:50}
+#style-dialog{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.45);z-index:1300}
 #style-card{background:#fff;border-radius:.8rem;border:1px solid var(--line);padding:14px 16px;width:340px;box-shadow:0 12px 36px rgba(0,0,0,.25)}
 #style-card h3{margin:0 0 8px 0;font-size:16px}
 .form-row{display:flex;align-items:center;justify-content:space-between;margin:8px 0}
@@ -83,7 +95,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
 
 /* ハザードパネル（左上・折り畳み） */
 #hazard-panel{
-  position:absolute;left:10px;top:70px;width:280px;background:#fff;border:1px solid var(--line);border-radius:.8rem;z-index:6;
+  position:absolute;left:10px;top:70px;width:280px;background:#fff;border:1px solid var(--line);border-radius:.8rem;z-index:950;
   box-shadow:0 4px 24px rgba(0,0,0,.08);
 }
 #hazard-header{background:#f1f5f9;padding:8px 10px;cursor:pointer;font-weight:700;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
@@ -172,7 +184,7 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
 
 <div id="layout">
   <div id="map"></div>
-  <aside id="side" class="">
+  <aside id="side">
     <div class="head">
       <div class="fold" id="side-fold"><span id="side-fold-icon">▼</span><strong>レイヤ一覧</strong></div>
       <div style="display:flex;gap:.4rem">
@@ -231,7 +243,7 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
 (function(){
   // ===== Utils =====
   const $ = (id)=>document.getElementById(id);
-  const showErr = (m)=>{ const e=$('err'); e.textContent=m; e.style.display='block'; console.error(m); setTimeout(()=>e.style.display='none',4000); };
+  const showErr = (m)=>{ const e=$('err'); e.textContent=m; e.style.display='block'; console.error(m); setTimeout(()=>e.style.display='none',6000); };
   const getHash = ()=> new URLSearchParams(location.hash.slice(1));
   const setHash = (q)=>{ location.hash=q.toString(); };
   const base62="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -242,27 +254,37 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
   // ===== URL / 権限（部屋→編集の順序を強制） =====
   let H=getHash(); let ROOM_ID=H.get('r')||''; let EDITOR_KEY=H.get('k')||'';
   const allowEdit = ()=> Boolean(ROOM_ID && EDITOR_KEY);
+
   function updateRoleUI(){
     $('role-badge').textContent = allowEdit() ? '編集可' : '閲覧専用';
-    $('room-pill').textContent = 'room: ' + (ROOM_ID||'-');
-    // 編集系ボタンの有効/無効
-    const toolIds=['tool-pin','tool-line','tool-poly','tool-circle','tool-photo','btn-add-group','btn-bulk-style','btn-toggle-all'];
-    toolIds.forEach(id=>{ const el=$(id); if(!el) return; el.disabled = !allowEdit(); });
-    // 「編集リンク作成」は部屋が無ければ無効
-    $('btn-make-editor').disabled = !ROOM_ID;
+    $('room-pill').textContent  = 'room: ' + (ROOM_ID || '-');
+
+    const editToolIds=['tool-pin','tool-line','tool-poly','tool-circle','tool-photo','btn-add-group','btn-bulk-style','btn-toggle-all'];
+    editToolIds.forEach(id=>{ const el=$(id); if(!el) return; el.disabled=!allowEdit(); });
+
+    // 「部屋を作成」は常に押せる
+    const mkRoom = $('btn-make-room'); if (mkRoom) mkRoom.disabled = false;
+    // 「編集リンク」は room があるときだけ押せる
+    const mkEditor = $('btn-make-editor'); if (mkEditor) mkEditor.disabled = !ROOM_ID;
   }
   updateRoleUI();
 
-  // URLから再読込無しで状態反映
-  window.addEventListener('hashchange', ()=>{
-    H=getHash(); ROOM_ID=H.get('r')||''; EDITOR_KEY=H.get('k')||'';
-    updateRoleUI(); renderAll();
+  // JSエラーを画面表示（原因の早期特定）
+  window.addEventListener('error', (ev)=>{
+    const box = $('err'); if(!box) return;
+    box.textContent = 'JSエラー: ' + (ev.error?.message || ev.message || 'unknown');
+    box.style.display='block';
+    setTimeout(()=>{ box.style.display='none'; }, 8000);
   });
 
-  // 閲覧URL作成
-  const viewURL=()=>{ const q=getHash(); if(!q.get('r')) q.set('r',rand(12)); q.delete('k'); q.delete('state'); return location.origin+location.pathname+'#'+q.toString(); };
+  // ハッシュ変化でUI反映（リロード不要）
+  window.addEventListener('hashchange', ()=>{
+    H=getHash(); ROOM_ID=H.get('r')||''; EDITOR_KEY=H.get('k')||'';
+    updateRoleUI();
+    if (typeof renderAll === 'function') renderAll();
+  });
 
-  // === サイドパネル（三角折り畳み：ヘッダは残す） ===
+  // ===== Side（三角折り畳み：中身だけ隠す） =====
   const sideEl=$('side');
   $('side-fold').onclick=()=>{
     sideEl.classList.toggle('folded');
@@ -282,14 +304,14 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
     });
   }catch(e){ showErr('Map初期化エラー: '+e.message); return; }
 
-  // カーソル：移動で grab / grabbing
+  // カーソル：grab / grabbing
   map.on('mousedown',()=>{ map.getCanvas().style.cursor='grabbing'; });
   map.on('mouseup',()=>{ map.getCanvas().style.cursor='grab'; });
 
-  // 3D風
+  // 擬似3D
   map.dragRotate.enable(); map.touchPitch.enable();
 
-  // Basemap
+  // Basemap（陰影起伏図を最下層、その上にOSM/地理院）
   function addBasemap(){
     if(!map.getSource('gsi-relief')) map.addSource('gsi-relief',{type:'raster',tiles:['https://cyberjapandata.gsi.go.jp/xyz/hillshademap/{z}/{x}/{y}.png'],tileSize:256,attribution:'地理院タイル（陰影起伏図）'});
     if(!map.getLayer('bm-relief')) map.addLayer({id:'bm-relief',type:'raster',source:'gsi-relief',paint:{'raster-opacity':1.0}});
@@ -301,7 +323,10 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
     if(!map.getLayer('bm-gsi-photo')) map.addLayer({id:'bm-gsi-photo',type:'raster',source:'gsi-photo',paint:{'raster-opacity':0.85}});
   }
   function showBM(id){ ['bm-osm','bm-gsi-std','bm-gsi-photo'].forEach(l=> map.getLayer(l)&&map.setLayoutProperty(l,'visibility', l===id?'visible':'none')); }
-  $('bm-osm').onclick=()=>showBM('bm-osm'); $('bm-gsi-std').onclick=()=>showBM('bm-gsi-std'); $('bm-gsi-photo').onclick=()=>showBM('bm-gsi-photo');
+
+  $('bm-osm').onclick=()=>showBM('bm-osm');
+  $('bm-gsi-std').onclick=()=>showBM('bm-gsi-std');
+  $('bm-gsi-photo').onclick=()=>showBM('bm-gsi-photo');
 
   map.on('load', ()=>{
     addBasemap(); showBM('bm-osm');
@@ -313,17 +338,19 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
         {enableHighAccuracy:true,timeout:7000}
       );
     }else map.jumpTo({center:[135.79,34.51],zoom:8.2});
+
     map.addControl(new maplibregl.AttributionControl({
-      customAttribution:'<a target="_blank" href="https://maps.gsi.go.jp/development/ichiran.html">地理院タイル</a> | <a target="_blank" href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>'
+      customAttribution:'© OpenStreetMap contributors | <a target="_blank" href="https://maps.gsi.go.jp/development/ichiran.html">地理院タイル</a>'
     }), 'bottom-right');
+
     ensureHazardSources();
   });
 
-  // 縮尺・方角
+  // 縮尺＆方角
   map.addControl(new maplibregl.NavigationControl({showCompass:true,visualizePitch:true,showZoom:true}),'top-right');
   map.addControl(new maplibregl.ScaleControl({maxWidth:150,unit:'metric'}),'top-right');
 
-  // 現在地コントロール
+  // === 現在地（青丸＋精度円＋パルス） ===
   class LocateControl {
     onAdd(map){
       this._map=map;
@@ -357,7 +384,7 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
   }
   map.addControl(new LocateControl(),'top-right');
 
-  // ハザード
+  // === ハザード ===
   function ensureHazardSources(){
     if(!map.getSource('flood')){
       map.addSource('flood',{type:'raster',tiles:['https://disaportaldata.gsi.go.jp/raster/01_flood_l2_shinsuishin_data/{z}/{x}/{y}.png'],tileSize:256});
@@ -376,6 +403,16 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
   $('chk-dosha').addEventListener('change',e=>{ ['dosha0','dosha1','dosha2'].forEach(id=> map.setLayoutProperty(id,'visibility', e.target.checked?'visible':'none')); });
   $('hazard-opacity').addEventListener('input',e=>{ const o=+e.target.value; $('hazard-ov').textContent=o.toFixed(2); if(map.getLayer('flood')) map.setPaintProperty('flood','raster-opacity',o); ['dosha0','dosha1','dosha2'].forEach(id=> map.getLayer(id)&&map.setPaintProperty(id,'raster-opacity',o)); });
 
+  // ===== Draw & Feature 管理 =====
+  const draw=new MapboxDraw({displayControlsDefault:false});
+  map.addControl(draw,'top-left');
+
+  // カーソル：追加時は「＋」に
+  function setCursorPlus(on){
+    const dataURI = "url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2224%22 height=%2224%22><text x=%224%22 y=%2218%22 font-size=%2220%22 font-family=%22Arial%22 fill=%22black%22>+</text></svg>') 12 12, crosshair";
+    map.getCanvas().style.cursor = on ? dataURI : 'grab';
+  }
+
   // 共有ストレージ（Yjs or ローカル）
   const hasY=!!(window.Y&&window.ywebrtc);
   const ydoc=hasY?new Y.Doc():null;
@@ -392,12 +429,12 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
   const setGroups=(arr)=>{ if(hasY){ yGroups.delete(0,yGroups.length); arr.forEach(g=>yGroups.push([g])); } else { localGroups.splice(0,localGroups.length,...arr); } };
   if(hasY && yGroups && yGroups.length===0) yGroups.push([{id:'__ungroup',name:'未分類',order:0,visible:true}]);
 
-  // 編集ガード付き
+  // 編集ガード付き CRUD
   function addF(f){ if(!allowEdit()) return alert('まず「部屋を作成」→「編集リンクを作成」してください'); if(hasY) yFeatures.push([f]); else localFeatures.push(f); renderAll(); }
   function updF(id,fn){ if(!allowEdit()) return alert('編集リンクを作成してください'); const a=featsArr(); const i=a.findIndex(x=>x.id===id); if(i<0)return; const n=structuredClone(a[i]); fn(n); a[i]=n; setFeats(a); renderAll(); }
   function delF(id){ if(!allowEdit()) return alert('編集リンクを作成してください'); const a=featsArr(); const i=a.findIndex(x=>x.id===id); if(i<0)return; a.splice(i,1); setFeats(a); renderAll(); }
 
-  // マーカー系
+  // マーカー類
   const labelMarkers=new Map(), pinMarkers=new Map(), photoMarkers=new Map(), photosFull=new Map();
   function clearMarkers(){ labelMarkers.forEach(m=>m.remove()); labelMarkers.clear(); pinMarkers.forEach(m=>m.remove()); pinMarkers.clear(); photoMarkers.forEach(m=>m.remove()); photoMarkers.clear(); }
   function addLabelMarker(id, lngLat, text){ if(!text) return; const el=document.createElement('div'); el.className='mlabel'; el.textContent=String(text); labelMarkers.set(id,new maplibregl.Marker({element:el,anchor:'top'}).setLngLat(lngLat).addTo(map)); }
@@ -407,12 +444,8 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
   function ensureGeomLayers(){ if(!map.getSource('geom-src')) map.addSource('geom-src',{type:'geojson',data:{type:'FeatureCollection',features:[]}}); if(!map.getLayer('geom-line')) map.addLayer({id:'geom-line',type:'line',source:'geom-src',filter:['==',['geometry-type'],'LineString'],paint:{'line-color':['coalesce',['get','styleColor'],'#2563eb'],'line-width':['coalesce',['get','styleWidth'],3]}}); if(!map.getLayer('geom-fill')) map.addLayer({id:'geom-fill',type:'fill',source:'geom-src',filter:['==',['geometry-type'],'Polygon'],paint:{'fill-color':['coalesce',['get','styleColor'],'#22c55e'],'fill-opacity':0.2}}); if(!map.getLayer('geom-outline')) map.addLayer({id:'geom-outline',type:'line',source:'geom-src',filter:['==',['geometry-type'],'Polygon'],paint:{'line-color':['coalesce',['get','styleColor'],'#15803d'],'line-width':['coalesce',['get','styleWidth'],2]}}); }
   function renderAll(){ const feats=featsArr(); clearMarkers(); ensureGeomLayers(); const geo=[]; feats.forEach(f=>{ if(f.properties?.visible===false) return; if(f.properties?.kind==='pin') addPinMarker(f); else if(f.properties?.kind==='photo') addPhotoMarker(f); else geo.push(f); if(f.properties?.label){ const p=labelCoordFor(f); if(p) addLabelMarker('lbl_'+f.id,p,f.properties.label); } }); map.getSource('geom-src').setData({type:'FeatureCollection',features:geo}); rebuildSidebar(); }
 
-  // ツール（選択/ピン/ライン/ポリ/円/写真）
+  // ===== ツール（選択/ピン/ライン/ポリ/円/写真） =====
   let tool='select', pinHandler=null, circleState=null, moveHandler=null, clickHandler=null;
-  function setCursorPlus(on){
-    const dataURI = "url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2224%22 height=%2224%22><text x=%224%22 y=%2218%22 font-size=%2220%22 font-family=%22Arial%22 fill=%22black%22>+</text></svg>') 12 12, crosshair";
-    map.getCanvas().style.cursor = on ? dataURI : 'grab';
-  }
   function setTool(t){
     if(!allowEdit() && t!=='select'){ alert('まず「部屋を作成」→「編集リンクを作成」してください'); t='select'; }
     tool=t;
@@ -485,10 +518,10 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
   function updateCirclePreview(center,r_m){ const poly=turf.circle(center, r_m, {steps:64,units:'meters'}); if(map.getSource('circle-prev')) map.getSource('circle-prev').setData(poly); }
   function removeCirclePreview(){ ['circle-prev-outline','circle-prev-line'].forEach(id=>{ if(map.getLayer(id)) map.removeLayer(id); }); if(map.getSource('circle-prev')) map.removeSource('circle-prev'); }
 
-  // Draw 完了
+  // Draw 完了（ライン/ポリゴン）
   map.on('draw.create',(e)=>{ const f=e.features[0]; if(!f) return; if(f.geometry.type==='Point'){ draw.delete(f.id); return; } const label=prompt('ラベル（任意）')||''; const kind=(f.geometry.type==='LineString'?'line':'polygon'); addF({type:'Feature',id:nowId(),geometry:f.geometry,properties:{kind,label,visible:true,styleColor:(kind==='line')?'#2563eb':'#22c55e',styleWidth:3}}); draw.delete(f.id); });
 
-  // 写真
+  // 写真（EXIF→緯度経度 / 無ければクリックで指定）
   const pendingPhotos=[];
   $('photo-input').addEventListener('change', async ev=>{
     const files=Array.from(ev.target.files||[]); if(!files.length) return;
@@ -512,7 +545,7 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
   });
   function createThumb(src,maxW){ return new Promise(res=>{ const img=new Image(); img.crossOrigin='anonymous'; img.onload=()=>{ const s=Math.min(1,maxW/img.width); const w=img.width*s, h=img.height*s; const c=document.createElement('canvas'); c.width=w; c.height=h; c.getContext('2d').drawImage(img,0,0,w,h); res(c.toDataURL('image/jpeg',0.75)); }; img.src=src; }); }
 
-  // グループ & サイドバー
+  // ====== グループ & サイドバー ======
   function ensureGroup(name){ const gl=groupsArr(); const ex=gl.find(g=>g.name===name); if(ex) return ex.id; const id='g_'+rand(8); const max=Math.max(0,...gl.map(g=>g.order||0)); const ng={id,name,order:max+1,visible:true}; setGroups([...gl,ng]); return id; }
 
   function rebuildSidebar(){
@@ -526,6 +559,7 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
     gl.sort((a,b)=>(a.order||0)-(b.order||0)).forEach(g=>{
       const wrap=document.createElement('div'); wrap.className='group'; wrap.dataset.gid=g.id;
 
+      // group head
       const head=document.createElement('div'); head.className='ghead';
       const title=document.createElement('span'); title.textContent=g.name||'グループ';
 
@@ -543,10 +577,12 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
       head.appendChild(title); head.appendChild(paint); head.appendChild(eye);
       wrap.appendChild(head);
 
+      // items
       const items=document.createElement('div'); items.className='gitems';
       (by.get(g.id)||[]).forEach(f=>{
         const it=document.createElement('div'); it.className='item'; it.draggable=true; it.dataset.fid=f.id;
 
+        // DnD：レイヤ→レイヤ（重ねて）両方を新グループへ
         it.ondragstart=(ev)=>{ ev.dataTransfer.setData('text/plain', f.id); };
         it.ondragover=(ev)=>ev.preventDefault();
         it.ondrop=(ev)=>{ ev.preventDefault(); const fromId=ev.dataTransfer.getData('text/plain'); if(!fromId || fromId===f.id) return; const name=prompt('新しいグループ名'); if(!name) return; moveToNewGroup([fromId, f.id], name); };
@@ -555,7 +591,7 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
         eye.onclick=(ev)=>{ ev.stopPropagation(); updF(f.id,n=>{ n.properties.visible=!n.properties.visible; }); };
 
         const nm=document.createElement('span'); nm.className='name'; nm.textContent=f.properties?.label||f.properties?.kind||'obj';
-        nm.onclick=()=> zoomToFeature(f); // ← クリックでズーム復活
+        nm.onclick=()=> zoomToFeature(f); // ← レイヤ名クリックでズーム
 
         const edit=document.createElement('span'); edit.className='edit'; edit.textContent='✏️';
         edit.onclick=(ev)=>{ ev.stopPropagation(); if(!allowEdit()) return alert('編集リンクを作成してください'); const v=prompt('ラベルを編集', f.properties?.label||''); if(v===null) return; updF(f.id,n=>{ n.properties.label=v; }); };
@@ -569,6 +605,7 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
         it.appendChild(eye); it.appendChild(nm); it.appendChild(edit); it.appendChild(paintI); it.appendChild(del);
         items.appendChild(it);
       });
+
       wrap.appendChild(items);
       list.appendChild(wrap);
     });
@@ -596,10 +633,10 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
   $('btn-bulk-style').onclick=()=>{ if(!allowEdit()) return alert('編集リンクを作成してください'); const ids=featsArr().map(f=>f.id); if(!ids.length) return alert('対象のレイヤがありません'); openStyleDialogFor(ids,false,true); };
   $('btn-toggle-all').onclick=()=>{ if(!allowEdit()) return alert('編集リンクを作成してください'); const feats=structuredClone(featsArr()); const anyHidden=feats.some(f=>f.properties?.visible===false); feats.forEach(f=>{ f.properties={...(f.properties||{}), visible:anyHidden}; }); setFeats(feats); };
 
-  // スタイルダイアログ
+  // スタイルダイアログ（複数ID）
   let styleTarget=null;
-  function openStyleDialogFor(ids, isPinExplicit=false, mixed=false){
-    styleTarget={ids,mixed};
+  function openStyleDialogFor(ids, isPinExplicit=false){
+    styleTarget={ids};
     const feats=featsArr(); const f=feats.find(x=>x.id===ids[0]);
     const isPin = isPinExplicit || (f && f.properties.kind==='pin');
     $('val-label').textContent=isPin?'大きさ(px)':'線幅(px)';
@@ -623,30 +660,37 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
     $('style-dialog').style.display='none'; styleTarget=null;
   };
 
-  // 初期描画
+  // 初期描画 & 同期
   renderAll();
   if(hasY && yFeatures){ yFeatures.observe(()=>renderAll()); }
-  // === リンク発行（順序を強制） ===
+  // === リンク発行（順序を強制：部屋→編集） ===
   $('btn-make-room').onclick=()=>{
     const q=getHash();
-    q.set('r',rand(12)); // 新しいroom
-    q.delete('k');       // 編集キーは一旦消す
-    setHash(q); // リロード不要
-    // 内部状態更新
-    H=q; ROOM_ID=q.get('r'); EDITOR_KEY=''; updateRoleUI();
+    q.set('r', rand(12));
+    q.delete('k'); // いったん編集キーは無し
+    setHash(q);    // リロード不要
+    ROOM_ID = q.get('r'); EDITOR_KEY = '';
+    updateRoleUI();
     alert('部屋を作成しました。次に「編集リンクを作成」を押してください。');
   };
 
   $('btn-make-editor').onclick=()=>{
     const q=getHash();
     if(!q.get('r')){ alert('先に「部屋を作成」してください'); return; }
-    q.set('k',rand(16));
+    q.set('k', rand(16));
     setHash(q);
-    H=q; ROOM_ID=q.get('r'); EDITOR_KEY=q.get('k'); updateRoleUI();
+    ROOM_ID = q.get('r'); EDITOR_KEY = q.get('k');
+    updateRoleUI();
     navigator.clipboard.writeText(location.href).then(()=>alert('編集リンクをコピーしました'));
   };
 
-  $('btn-copy-view').onclick=()=>{ navigator.clipboard.writeText(viewURL()).then(()=>alert('閲覧用リンクをコピーしました')); };
+  $('btn-copy-view').onclick=()=>{
+    const q=getHash();
+    if(!q.get('r')) q.set('r', rand(12));
+    q.delete('k'); q.delete('state');
+    const url=location.origin+location.pathname+'#'+q.toString();
+    navigator.clipboard.writeText(url).then(()=>alert('閲覧用リンクをコピーしました'));
+  };
 
   // === エクスポート（GeoJSON/zip） ===
   function pad2(n){return String(n).padStart(2,'0');}
@@ -656,18 +700,25 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
     const points=feats.filter(f=>f.properties.kind==='pin'||f.properties.kind==='photo');
     const lines =feats.filter(f=>f.properties.kind==='line');
     const polys =feats.filter(f=>f.properties.kind==='polygon'||f.properties.kind==='circle');
+
     const t=new Date(); const stamp=`${t.getFullYear()}${pad2(t.getMonth()+1)}${pad2(t.getDate())}_${pad2(t.getHours())}${pad2(t.getMinutes())}${pad2(t.getSeconds())}`;
     zip.file(`points_${stamp}.geojson`,JSON.stringify({type:'FeatureCollection',features:points},null,2));
     zip.file(`lines_${stamp}.geojson`, JSON.stringify({type:'FeatureCollection',features:lines},null,2));
     zip.file(`polygons_${stamp}.geojson`,JSON.stringify({type:'FeatureCollection',features:polys},null,2));
-    zip.generateAsync({type:'blob'}).then(b=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=`export_${stamp}.zip`; a.click(); });
+
+    zip.generateAsync({type:'blob'}).then(b=>{
+      const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=`export_${stamp}.zip`; a.click();
+    });
   };
 
-  // === スクショ（ページ全体） ===
+  // === スクショ（ページ全体を含む：上部/下部/クレジット込み） ===
   $('btn-screenshot').onclick=async()=>{
     try{
       const canvas=await html2canvas(document.body,{backgroundColor:'#fff',scale:2,useCORS:true});
-      const a=document.createElement('a'); a.href=canvas.toDataURL('image/png'); a.download='screenshot_'+(new Date().toISOString().replace(/[:T\-]/g,'').slice(0,14))+'.png'; a.click();
+      const a=document.createElement('a');
+      a.href=canvas.toDataURL('image/png');
+      a.download='screenshot_'+(new Date().toISOString().replace(/[:T\-]/g,'').slice(0,14))+'.png';
+      a.click();
     }catch(e){ console.error(e); alert('スクショに失敗しました'); }
   };
 
