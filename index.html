@@ -200,7 +200,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   function addBasemap(){
     // 最下層：陰影起伏図
     if(!map.getSource('gsi-relief')){
-      map.addSource('gsi-relief',{type:'raster',tiles:['https://cyberjapandata.gsi.go.jp/xyz/relief/{z}/{x}/{y}.png'],tileSize:256,attribution:'地理院タイル（陰影起伏図）'});
+      map.addSource('gsi-relief',{type:'raster',tiles:['https://cyberjapandata.gsi.go.jp/xyz/hillshademap/{z}/{x}/{y}.png'],tileSize:256,attribution:'地理院タイル（陰影起伏図）'});
     }
     if(!map.getLayer('bm-relief')){
       map.addLayer({id:'bm-relief',type:'raster',source:'gsi-relief',paint:{'raster-opacity':1.0}});
