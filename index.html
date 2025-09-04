@@ -189,19 +189,42 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
       style:EMPTY_STYLE,
       center:[135.79,34.51], zoom:8.2,
       attributionControl:false,
-      preserveDrawingBuffer:true   // ← スクショ用に必須
+      preserveDrawingBuffer:true   // スクショ
     });
   }catch(e){ showErr('Map初期化エラー: '+e.message); return; }
 
+  // Map interactions for “3D-ish”
+  map.dragRotate.enable();
+  map.touchPitch.enable();
+
   function addBasemap(){
-    if(!map.getSource('osm')) map.addSource('osm',{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OpenStreetMap contributors'});
-    if(!map.getSource('gsi-std')) map.addSource('gsi-std',{type:'raster',tiles:['https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png'],tileSize:256,attribution:'地理院タイル（標準地図）'});
-    if(!map.getSource('gsi-photo')) map.addSource('gsi-photo',{type:'raster',tiles:['https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg'],tileSize:256,attribution:'地理院タイル（全国最新写真）'});
-    if(!map.getLayer('bm-osm')) map.addLayer({id:'bm-osm',type:'raster',source:'osm'});
-    if(!map.getLayer('bm-gsi-std')) map.addLayer({id:'bm-gsi-std',type:'raster',source:'gsi-std'});
-    if(!map.getLayer('bm-gsi-photo')) map.addLayer({id:'bm-gsi-photo',type:'raster',source:'gsi-photo'});
+    // 最下層：陰影起伏図
+    if(!map.getSource('gsi-relief')){
+      map.addSource('gsi-relief',{type:'raster',tiles:['https://cyberjapandata.gsi.go.jp/xyz/relief/{z}/{x}/{y}.png'],tileSize:256,attribution:'地理院タイル（陰影起伏図）'});
+    }
+    if(!map.getLayer('bm-relief')){
+      map.addLayer({id:'bm-relief',type:'raster',source:'gsi-relief',paint:{'raster-opacity':1.0}});
+    }
+
+    // 上層：OSM / 標準 / 写真（半透明）
+    if(!map.getSource('osm')){
+      map.addSource('osm',{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OpenStreetMap contributors'});
+    }
+    if(!map.getSource('gsi-std')){
+      map.addSource('gsi-std',{type:'raster',tiles:['https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png'],tileSize:256,attribution:'地理院タイル（標準地図）'});
+    }
+    if(!map.getSource('gsi-photo')){
+      map.addSource('gsi-photo',{type:'raster',tiles:['https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg'],tileSize:256,attribution:'地理院タイル（全国最新写真）'});
+    }
+
+    if(!map.getLayer('bm-osm')) map.addLayer({id:'bm-osm',type:'raster',source:'osm',paint:{'raster-opacity':0.85}});
+    if(!map.getLayer('bm-gsi-std')) map.addLayer({id:'bm-gsi-std',type:'raster',source:'gsi-std',paint:{'raster-opacity':0.85}});
+    if(!map.getLayer('bm-gsi-photo')) map.addLayer({id:'bm-gsi-photo',type:'raster',source:'gsi-photo',paint:{'raster-opacity':0.85}});
   }
-  function showBM(id){ ['bm-osm','bm-gsi-std','bm-gsi-photo'].forEach(l=> map.getLayer(l)&&map.setLayoutProperty(l,'visibility',l===id?'visible':'none')); }
+  function showBM(id){
+    // relief は常に表示（最下層）
+    ['bm-osm','bm-gsi-std','bm-gsi-photo'].forEach(l=> map.getLayer(l)&&map.setLayoutProperty(l,'visibility', l===id?'visible':'none'));
+  }
 
   map.on('load', ()=>{
     addBasemap(); showBM('bm-osm');
@@ -216,7 +239,10 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
       customAttribution:'<a target="_blank" href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a> | <a target="_blank" href="https://maps.gsi.go.jp/development/ichiran.html">地理院タイル</a>'
     }), 'bottom-right');
   });
-  $('bm-osm').onclick=()=>showBM('bm-osm'); $('bm-gsi-std').onclick=()=>showBM('bm-gsi-std'); $('bm-gsi-photo').onclick=()=>showBM('bm-gsi-photo');
+  $('bm-osm').onclick=()=>showBM('bm-osm');
+  $('bm-gsi-std').onclick=()=>showBM('bm-gsi-std');
+  $('bm-gsi-photo').onclick=()=>showBM('bm-gsi-photo');
+
   map.addControl(new maplibregl.NavigationControl({showZoom:true}),'top-right');
   map.addControl(new maplibregl.GeolocateControl({positionOptions:{enableHighAccuracy:true},trackUserLocation:true,showUserHeading:true}));
 
@@ -230,7 +256,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   function addLabelMarker(id, lngLat, text){ if(!text) return; const el=document.createElement('div'); el.className='mlabel'; el.textContent=String(text); const m=new maplibregl.Marker({element:el,anchor:'top'}).setLngLat(lngLat).addTo(map); labelMarkers.set(id,m); }
   function addPinMarker(f){
     const color=f.properties?.styleColor||'#d00';
-    const size =Number(f.properties?.styleSize||26); // ← サイズ可変
+    const size =Number(f.properties?.styleSize||26);
     const el=document.createElement('div');
     el.innerHTML=`<svg class="pin" width="${size}" height="${size}" viewBox="0 0 24 24" fill="${color}" stroke="#fff" stroke-width="1.5"><path d="M12 22s-6-5.33-6-10a6 6 0 1 1 12 0c0 4.67-6 10-6 10z"></path><circle cx="12" cy="10" r="2.8" fill="#fff"/></svg>`;
     const m=new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat(f.geometry.coordinates).addTo(map);
@@ -245,7 +271,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
     const m=new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat(f.geometry.coordinates).addTo(map); photoMarkers.set(f.id,m);
   }
 
-  // ===== Data model =====
+  // ===== Data model（Yjs/Local） =====
   const hasY=!!(window.Y&&window.ywebrtc);
   const ydoc=hasY?new Y.Doc():null;
   const provider=hasY&&ROOM_ID?new ywebrtc.WebrtcProvider(ROOM_ID, ydoc):null;
@@ -327,8 +353,9 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   map.on('click', (e)=>{
     if(tool==='pin'){
       const label=prompt('ピンのラベル（任意）')||'';
-      const lon=e.lngLat.lng, lat=e.lngLat.lat;  // 10進数を保存
-      const feat={type:'Feature',id:nowId(),geometry:{type:'Point',coordinates:[lon,lat]},properties:{kind:'pin',label,visible:true,lon,lat,styleColor:'#d00',styleSize:26}};
+      const lon=e.lngLat.lng, lat=e.lngLat.lat;
+      const feat={type:'Feature',id:nowId(),geometry:{type:'Point',coordinates:[lon,lat]},
+        properties:{kind:'pin',label,visible:true,lon,lat,styleColor:'#d00',styleSize:26}};
       addF(feat); return;
     }
     if(tool==='circle'){
@@ -336,11 +363,13 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
       const rkm=turf.distance(circleCenter,[e.lngLat.lng,e.lngLat.lat],{units:'kilometers'});
       const poly=turf.circle(circleCenter,rkm,{steps:64,units:'kilometers'});
       clearCirclePreview(); const label=prompt('円のラベル（任意）')||'';
-      const feat={type:'Feature',id:nowId(),geometry:poly.geometry,properties:{kind:'circle',label,visible:true,radius_m:Math.round(rkm*1000),styleColor:'#22c55e',styleWidth:2}};
+      const feat={type:'Feature',id:nowId(),geometry:poly.geometry,
+        properties:{kind:'circle',label,visible:true,radius_m:Math.round(rkm*1000),styleColor:'#22c55e',styleWidth:2}};
       circleCenter=null; addF(feat); setTool('select'); return;
     }
     if(placingPhoto){
-      const feat={type:'Feature',id:nowId(),geometry:{type:'Point',coordinates:[e.lngLat.lng,e.lngLat.lat]},properties:{kind:'photo',label:placingPhoto.label,thumb:placingPhoto.thumb,visible:true}};
+      const feat={type:'Feature',id:nowId(),geometry:{type:'Point',coordinates:[e.lngLat.lng,e.lngLat.lat]},
+        properties:{kind:'photo',label:placingPhoto.label,thumb:placingPhoto.thumb,visible:true}};
       photosFull.set(feat.id, placingPhoto.fullURL); placingPhoto=null; addF(feat); return;
     }
   });
@@ -351,7 +380,8 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
     const label=prompt((f.geometry.type==='LineString'?'ライン':'ポリゴン')+'のラベル（任意）')||'';
     const kind=(f.geometry.type==='LineString'?'line':'polygon');
     const colorDefault = (kind==='line') ? '#2563eb' : '#22c55e';
-    const feat={type:'Feature',id:nowId(),geometry:f.geometry,properties:{kind,label,visible:true,styleColor:colorDefault,styleWidth:3}};
+    const feat={type:'Feature',id:nowId(),geometry:f.geometry,
+      properties:{kind,label,visible:true,styleColor:colorDefault,styleWidth:3}};
     draw.delete(f.id); addF(feat); setTool('select');
   });
 
@@ -360,15 +390,15 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
     const files=[...ev.target.files];
     for(const file of files){
       let lat=null,lon=null;
-      try{
-        const gps=await exifr.gps(file);
+      try{ const gps=await exifr.gps(file);
         if(gps && typeof gps.latitude==='number' && typeof gps.longitude==='number'){ lat=gps.latitude; lon=gps.longitude; }
       }catch(_){}
       const img=await fileToImage(file);
       const {thumb,fullURL}=await makeThumb(img,800,512);
       const label=file.name.replace(/\.[^.]+$/,'');
       if(lat!=null && lon!=null){
-        const feat={type:'Feature',id:nowId(),geometry:{type:'Point',coordinates:[lon,lat]},properties:{kind:'photo',label,thumb,visible:true}};
+        const feat={type:'Feature',id:nowId(),geometry:{type:'Point',coordinates:[lon,lat]},
+          properties:{kind:'photo',label,thumb,visible:true}};
         photosFull.set(feat.id, fullURL); addF(feat);
       }else{
         placingPhoto={thumb,fullURL,label}; alert('この写真にはGPSがありません。地図をクリックして配置してください。');
@@ -378,7 +408,8 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   });
   function fileToImage(f){ return new Promise((res,rej)=>{ const u=URL.createObjectURL(f); const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=u; }); }
   async function makeThumb(img, fullMax=800, thumbMax=512){
-    const to=(max)=>{ const s=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight)); const w=Math.round(img.naturalWidth*s), h=Math.round(img.naturalHeight*s); const c=document.createElement('canvas'); c.width=w; c.height=h; const ctx=c.getContext('2d'); ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high'; ctx.drawImage(img,0,0,w,h); return c.toDataURL('image/jpeg',0.75); };
+    const to=(max)=>{ const s=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight)); const w=Math.round(img.naturalWidth*s), h=Math.round(img.naturalHeight*s);
+      const c=document.createElement('canvas'); c.width=w; c.height=h; const ctx=c.getContext('2d'); ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high'; ctx.drawImage(img,0,0,w,h); return c.toDataURL('image/jpeg',0.75); };
     return {fullURL:to(fullMax), thumb:to(thumbMax)};
   }
 
@@ -464,15 +495,18 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   $('btn-add-group').onclick=()=>{ const n=prompt('新しいグループ名','新しいグループ'); if(!n) return; ensureGroup(n); rebuildSidebar(); };
   $('btn-toggle-all').onclick=()=>{ const a=featsArr(); const any=a.some(f=>f.properties?.visible!==false); a.forEach(f=>f.properties={...f.properties,visible:!any}); setFeats(a); renderAll(); };
 
-  // ===== スタイルダイアログ（アイテム／グループ） =====
+  // ===== スタイルダイアログ =====
   let styleTarget=null; // {type:'item'|'group', ids:[...], forPin:boolean}
   function openStyleDialogForItem(f){
     styleTarget={type:'item', ids:[f.id], forPin:(f.properties?.kind==='pin')};
     const color=f.properties?.styleColor || (f.properties?.kind==='line' ? '#2563eb' : '#22c55e');
-    const value = (f.properties?.kind==='pin') ? (f.properties?.styleSize ?? 26) : (f.properties?.styleWidth ?? 3);
+    const isPin = (f.properties?.kind==='pin');
+    const value = isPin ? (f.properties?.styleSize ?? 26) : (f.properties?.styleWidth ?? 3);
     $('style-title').textContent = `スタイル：${kind(f.properties?.kind)}`;
     $('inp-color').value = toColorInput(color);
-    $('val-label').textContent = (f.properties?.kind==='pin') ? '大きさ(px)' : '線幅(px)';
+    $('val-label').textContent = isPin ? '大きさ(px)' : '線幅(px)';
+    $('inp-range').min = 1;
+    $('inp-range').max = isPin ? 60 : 30;   // ← ピンは上限60
     $('inp-range').value = value;
     $('val-num').textContent = value;
     $('style-dialog').style.display='flex';
@@ -483,16 +517,18 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
     $('style-title').textContent = `グループ一括スタイル：${g.name}`;
     $('inp-color').value = '#22c55e';
     $('val-label').textContent = '線幅(px) / ピンは大きさ';
+    $('inp-range').min = 1;
+    $('inp-range').max = 60;    // ← ピンも含むので60まで
     $('inp-range').value = 3;
     $('val-num').textContent = 3;
     $('style-dialog').style.display='flex';
   }
-  function toColorInput(c){ // #RRGGBB 固定
+  function toColorInput(c){
     if(/^#([0-9a-f]{6})$/i.test(c)) return c;
     const d=document.createElement('div'); d.style.color=c; document.body.appendChild(d);
     const rgb=getComputedStyle(d).color; document.body.removeChild(d);
     const m=rgb.match(/(\d+),\s*(\d+),\s*(\d+)/); if(!m) return '#22c55e';
-    const toHex=(n)=>Number(n).toString(16).padStart(2,'0');
+    const toHex=n=>Number(n).toString(16).padStart(2,'0');
     return '#'+toHex(m[1])+toHex(m[2])+toHex(m[3]);
   }
   $('inp-range').addEventListener('input', e=> $('val-num').textContent = e.target.value );
@@ -504,8 +540,8 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
     styleTarget.ids.forEach(id=>{
       updF(id, n=>{
         n.properties.styleColor=color;
-        if (featsArr().find(x=>x.id===id)?.properties?.kind==='pin') n.properties.styleSize=val;
-        else n.properties.styleWidth=val;
+        const kind = featsArr().find(x=>x.id===id)?.properties?.kind;
+        if (kind==='pin') n.properties.styleSize=val; else n.properties.styleWidth=val;
       });
     });
     $('style-dialog').style.display='none'; styleTarget=null;
@@ -563,21 +599,18 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
       const rectLayout=layout.getBoundingClientRect();
       const rectMap=mapEl.getBoundingClientRect();
 
-      // 1) ベースキャンバス作成
       const out=document.createElement('canvas');
       out.width=Math.floor(rectLayout.width*scale);
       out.height=Math.floor(rectLayout.height*scale);
       const ctx=out.getContext('2d');
       ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,out.width,out.height);
 
-      // 2) 地図Canvasを直接描画（preserveDrawingBuffer 必須）
       const mapCanvas = map.getCanvas();
       const dx=(rectMap.left-rectLayout.left)*scale;
       const dy=(rectMap.top-rectLayout.top)*scale;
       const dw=rectMap.width*scale, dh=rectMap.height*scale;
       ctx.drawImage(mapCanvas, 0,0,mapCanvas.width,mapCanvas.height, dx,dy,dw,dh);
 
-      // 3) UIだけを html2canvas で描画（map要素は無視）
       const uiCanvas = await html2canvas(layout,{backgroundColor:null,scale,ignoreElements:(el)=> el.id==='map', useCORS:true});
       ctx.drawImage(uiCanvas, 0,0);
 
