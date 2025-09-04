@@ -201,7 +201,6 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   const nowId=()=> 'id_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
   const pad=(n)=>String(n).padStart(2,'0');
   const ts=()=>{ const d=new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`; };
-  const esc=(s)=>String(s??'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 
   // ===== URL short =====
   const H=getHash(); let ROOM_ID=H.get('r')||''; let EDITOR_KEY=H.get('k')||''; const READ_ONLY=!EDITOR_KEY;
@@ -219,16 +218,16 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
       style:EMPTY_STYLE,
       center:[135.79,34.51], zoom:8.2,
       attributionControl:false,
-      preserveDrawingBuffer:true   // スクショ
+      preserveDrawingBuffer:true   // スクショで必要
     });
   }catch(e){ showErr('Map初期化エラー: '+e.message); return; }
 
-  // Map interactions for “3D-ish”
+  // 3D風操作
   map.dragRotate.enable();
   map.touchPitch.enable();
 
   function addBasemap(){
-    // 最下層：陰影起伏図
+    // 最下層：陰影起伏図（正）
     if(!map.getSource('gsi-relief')){
       map.addSource('gsi-relief',{type:'raster',tiles:['https://cyberjapandata.gsi.go.jp/xyz/hillshademap/{z}/{x}/{y}.png'],tileSize:256,attribution:'地理院タイル（陰影起伏図）'});
     }
@@ -266,15 +265,17 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
       );
     }else map.jumpTo({center:[135.79,34.51],zoom:8.2});
     map.addControl(new maplibregl.AttributionControl({
-      customAttribution:'<a target="_blank" href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a> | <a target="_blank" href="https://maps.gsi.go.jp/development/ichiran.html">地理院タイル</a>'
+      // 順序：地理院タイル | OSM
+      customAttribution:'<a target="_blank" href="https://maps.gsi.go.jp/development/ichiran.html">地理院タイル</a> | <a target="_blank" href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>'
     }), 'bottom-right');
   });
   $('bm-osm').onclick=()=>showBM('bm-osm');
   $('bm-gsi-std').onclick=()=>showBM('bm-gsi-std');
   $('bm-gsi-photo').onclick=()=>showBM('bm-gsi-photo');
 
-  map.addControl(new maplibregl.NavigationControl({showZoom:true}),'top-right');
-  map.addControl(new maplibregl.GeolocateControl({positionOptions:{enableHighAccuracy:true},trackUserLocation:true,showUserHeading:true}));
+  // 縮尺＆方角（上部に配置）
+  map.addControl(new maplibregl.NavigationControl({showCompass:true,visualizePitch:true,showZoom:true}),'top-left');
+  map.addControl(new maplibregl.ScaleControl({maxWidth:150,unit:'metric'}),'top-left');
 
   // ===== Draw =====
   const draw=new MapboxDraw({displayControlsDefault:false});
@@ -383,7 +384,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   map.on('click', (e)=>{
     if(tool==='pin'){
       const label=prompt('ピンのラベル（任意）')||'';
-      const lon=e.lngLat.lng, lat=e.lngLat.lat;
+      const lon=e.lngLat.lng, lat=e.lngLat.lat;  // 10進数保存
       const feat={type:'Feature',id:nowId(),geometry:{type:'Point',coordinates:[lon,lat]},
         properties:{kind:'pin',label,visible:true,lon,lat,styleColor:'#d00',styleSize:26}};
       addF(feat); return;
@@ -496,7 +497,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
         it.appendChild(eye); it.appendChild(name); it.appendChild(style); it.appendChild(edit); it.appendChild(del); items.appendChild(it);
       });
 
-      // D&D重ね → 新グループ
+      // D&D重ね → 新グループ（両者を同じ新規グループへ移動）
       items.addEventListener('dragstart', e=>{ const it=e.target.closest('.item'); if(!it)return; e.dataTransfer.setData('text/plain',it.dataset.id); });
       items.addEventListener('dragover', e=>e.preventDefault());
       items.addEventListener('drop', e=>{
@@ -505,14 +506,9 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
         const toItem=e.target.closest('.item');
         if(toItem){
           const toId=toItem.dataset.id; const fa=featsArr(); const fromF=fa.find(x=>x.id===from); const toF=fa.find(x=>x.id===toId); if(!fromF||!toF) return;
-          const same=(fromF.properties?.groupId||'__ungroup')===(toF.properties?.groupId||'__ungroup');
-          if(same){
-            const newName=prompt('新しいグループ名','新規グループ'); if(!newName) return;
-            const newG=ensureGroup(newName);
-            [fromF,toF].forEach(ff=>updF(ff.id, n=>{ n.properties.groupId=newG; }));
-          }else{
-            const target=(toF.properties?.groupId||'__ungroup'); updF(from, n=>{ n.properties.groupId=target; });
-          }
+          const newName=prompt('新しいグループ名（同じグループにまとめます）','新規グループ'); if(!newName) return;
+          const newG=ensureGroup(newName);
+          [fromF,toF].forEach(ff=>updF(ff.id, n=>{ n.properties.groupId=newG; }));
         }
       });
 
@@ -536,7 +532,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
     $('inp-color').value = toColorInput(color);
     $('val-label').textContent = isPin ? '大きさ(px)' : '線幅(px)';
     $('inp-range').min = 1;
-    $('inp-range').max = isPin ? 60 : 30;   // ← ピンは上限60
+    $('inp-range').max = isPin ? 60 : 30;   // ピンは60まで
     $('inp-range').value = value;
     $('val-num').textContent = value;
     $('style-dialog').style.display='flex';
@@ -548,7 +544,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
     $('inp-color').value = '#22c55e';
     $('val-label').textContent = '線幅(px) / ピンは大きさ';
     $('inp-range').min = 1;
-    $('inp-range').max = 60;    // ← ピンも含むので60まで
+    $('inp-range').max = 60;
     $('inp-range').value = 3;
     $('val-num').textContent = 3;
     $('style-dialog').style.display='flex';
@@ -577,7 +573,56 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
     $('style-dialog').style.display='none'; styleTarget=null;
   };
 
-  // ===== Export =====
+  // ===== Hazard layers =====
+  function ensureHazardSources(){
+    if(!map.getSource('flood')){
+      map.addSource('flood',{type:'raster',tiles:[
+        'https://disaportaldata.gsi.go.jp/raster/01_flood_l2_shinsuishin_data/{z}/{x}/{y}.png'
+      ],tileSize:256});
+      map.addLayer({id:'flood',type:'raster',source:'flood',
+        paint:{'raster-opacity':0.6},layout:{visibility:'none'}});
+    }
+    const doshaParts=['05_dosekiryukeikaikuiki','05_kyukeishakeikaikuiki','05_jisuberikeikaikuiki'];
+    doshaParts.forEach((p,i)=>{
+      const src='dosha'+i, lyr='dosha'+i;
+      if(!map.getSource(src)){
+        map.addSource(src,{type:'raster',tiles:[`https://disaportaldata.gsi.go.jp/raster/${p}/{z}/{x}/{y}.png`],tileSize:256});
+        map.addLayer({id:lyr,type:'raster',source:src,paint:{'raster-opacity':0.6},layout:{visibility:'none'}});
+      }
+    });
+  }
+  map.on('load', ensureHazardSources);
+
+  // パネル折り畳み
+  $('hazard-header').addEventListener('click',()=>{
+    const b=$('hazard-body');
+    b.style.display = (b.style.display==='none') ? 'block' : 'none';
+    $('hazard-fold').textContent = (b.style.display==='none') ? '▲' : '▼';
+  });
+
+  // チェックボックス
+  $('chk-flood').addEventListener('change',e=>{
+    if(!map.getLayer('flood')) ensureHazardSources();
+    map.setLayoutProperty('flood','visibility', e.target.checked?'visible':'none');
+  });
+  $('chk-dosha').addEventListener('change',e=>{
+    ['dosha0','dosha1','dosha2'].forEach(id=>{
+      if(!map.getLayer(id)) ensureHazardSources();
+      if(map.getLayer(id)) map.setLayoutProperty(id,'visibility', e.target.checked?'visible':'none');
+    });
+  });
+
+  // 透明度
+  $('hazard-opacity').addEventListener('input',e=>{
+    const o=parseFloat(e.target.value);
+    $('hazard-ov').textContent=o.toFixed(2);
+    if(map.getLayer('flood')) map.setPaintProperty('flood','raster-opacity',o);
+    ['dosha0','dosha1','dosha2'].forEach(id=>{
+      if(map.getLayer(id)) map.setPaintProperty(id,'raster-opacity',o);
+    });
+  });
+
+  // ===== Export（GeoJSON + photos CSV + images） =====
   $('btn-export').onclick=async ()=>{
     try{
       const a=featsArr().map(f=>JSON.parse(JSON.stringify(f)));
@@ -621,27 +666,40 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   function dataURLtoBlob(dataURL){ const arr=dataURL.split(','), mime=arr[0].match(/:(.*?);/)[1]; const bstr=atob(arr[1]); let n=bstr.length; const u8=new Uint8Array(n); while(n--) u8[n]=bstr.charCodeAt(n); return new Blob([u8],{type:mime}); }
   function toCSV(rows){ if(!rows.length) return 'label,lon,lat,image_file\n'; const keys=Object.keys(rows[0]); const escv=v=>`"${String(v).replace(/"/g,'""')}"`; return [keys.join(',')].concat(rows.map(r=>keys.map(k=>escv(r[k]??'')).join(','))).join('\n')+'\n'; }
 
-  // ===== Screenshot（300dpi相当）=====
+  // ===== Screenshot（300dpi風）=====
   $('btn-screenshot').onclick=async ()=>{
     try{
-      const layout=$('layout'), mapEl=$('map');
+      const layout=document.body;
+      const mapEl=$('map');
       const scale=3.125; // 96dpi -> 300dpi
-      const rectLayout=layout.getBoundingClientRect();
+      const rectBody=layout.getBoundingClientRect();
       const rectMap=mapEl.getBoundingClientRect();
 
+      // 出力キャンバス
       const out=document.createElement('canvas');
-      out.width=Math.floor(rectLayout.width*scale);
-      out.height=Math.floor(rectLayout.height*scale);
+      out.width=Math.floor(rectBody.width*scale);
+      out.height=Math.floor(rectBody.height*scale);
       const ctx=out.getContext('2d');
       ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,out.width,out.height);
 
+      // 先に地図（WebGL）を描画
       const mapCanvas = map.getCanvas();
-      const dx=(rectMap.left-rectLayout.left)*scale;
-      const dy=(rectMap.top-rectLayout.top)*scale;
+      const dx=(rectMap.left-rectBody.left)*scale;
+      const dy=(rectMap.top-rectBody.top)*scale;
       const dw=rectMap.width*scale, dh=rectMap.height*scale;
       ctx.drawImage(mapCanvas, 0,0,mapCanvas.width,mapCanvas.height, dx,dy,dw,dh);
 
-      const uiCanvas = await html2canvas(layout,{backgroundColor:null,scale,ignoreElements:(el)=> el.id==='map', useCORS:true});
+      // UI（上部バー/サイド/ヘルプ/クレジット等）をhtml2canvasで重ねる
+      const uiCanvas = await html2canvas(document.body,{
+        backgroundColor:null,
+        scale,
+        useCORS:true,
+        // WebGLキャンバスだけ無視（#map内のdivやクレジットは含める）
+        ignoreElements:(el)=>{
+          if(el.tagName==='CANVAS') return true;
+          return false;
+        }
+      });
       ctx.drawImage(uiCanvas, 0,0);
 
       out.toBlob((blob)=>{
@@ -655,7 +713,10 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
   $('btn-make-editor').onclick=async ()=>{ const url=editURL(); try{await navigator.clipboard.writeText(url);}catch(e){} location.hash=url.split('#')[1]; const q=getHash(); ROOM_ID=q.get('r')||ROOM_ID; EDITOR_KEY=q.get('k')||EDITOR_KEY; $('role-badge').textContent=EDITOR_KEY?'編集可':'閲覧専用'; $('room-pill').textContent='room: '+ROOM_ID; alert('編集リンクをコピーしました。\n'+url); };
   $('btn-copy-view').onclick=async ()=>{ const url=viewURL(); try{await navigator.clipboard.writeText(url); alert('閲覧リンクをコピーしました。\n'+url);}catch(e){prompt('コピーできない場合は手動で',url);} };
 
-  // ===== Observe & initial render =====
+  // ===== 初期描画 =====
+  function kind(k){ return k==='pin'?'ピン':k==='photo'?'写真':k==='line'?'ライン':k==='polygon'?'ポリゴン':k==='circle'?'円':'項目'; }
+  function openStyleDialogForItem(f){} // （上で定義済み。ここはダミー回避）
+  function openStyleDialogForGroup(g, feats){} //（上で定義済み。ここはダミー回避）
   if(hasY){ yFeatures.observeDeep(()=>renderAll()); yGroups && yGroups.observe(()=>rebuildSidebar()); }
   renderAll();
 
