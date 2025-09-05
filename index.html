@@ -42,11 +42,20 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
 .muted{color:var(--muted);font-size:.9rem}
 
 /* Layout */
-#layout{position:relative;height:calc(100% - 64px)}
+/* Layout */
 #map{
-  position:absolute;inset:0 340px 0 0;transition:right .2s;
-  z-index:1; /* ← 地図は背面に */
+  position:absolute;
+  inset:0 340px 0 0;
+  transition:right .2s;
+  z-index:0;              /* ← ここを 0 にする（1 になっていたら修正） */
 }
+
+/* MapLibre のキャンバスを最背面に固定 */
+.maplibregl-canvas,
+.maplibregl-canvas-container{
+  z-index:0 !important;
+}
+
 
 /* Side panel */
 #side{
