@@ -43,7 +43,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
 .btn:disabled{opacity:.55;cursor:not-allowed}
 .badge{font-size:.82rem;padding:.2rem .55rem;border:1px solid var(--line);border-radius:999px;background:#fff}
 .sep{width:1px;height:28px;background:var(--line);margin:0 .25rem}
-.muted{color:var(--muted);font-size:.9rem}
+.muted{color:#64748b;font-size:.9rem}
 
 /* Layout（トップバーの下に配置） */
 #layout{position:relative;height:calc(100% - 64px)}
@@ -67,9 +67,9 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
 /* ▶ サイドパネル丸ごと折りたたみ（新規追加） */
 body.side-collapsed #side{ width:36px; }
 body.side-collapsed #side .head{ padding:.35rem .4rem; }
-body.side-collapsed #side .head > div:last-child{ display:none; } /* +一括スタイル/全表示ボタン群を隠す */
+body.side-collapsed #side .head > div:last-child{ display:none; }
 body.side-collapsed #list{ display:none; }
-body.side-collapsed #map{ inset:0 0 0 0; } /* 地図を全幅に */
+body.side-collapsed #map{ inset:0 0 0 0; }
 
 /* Group list */
 .group{border:1px solid var(--line);border-radius:.6rem;margin-bottom:.5rem}
@@ -251,7 +251,6 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
 <div id="help">①部屋作成 → ②編集リンク → ③選択/ピン/ライン/ポリゴン/円/写真 → ④リンク配布 → ⑤エクスポート / スクショ。</div>
 <div id="err"></div>
 <div id="modal" onclick="this.style.display='none'"><img id="modal-img" alt="photo"/></div>
-
 <script>
 window.addEventListener('DOMContentLoaded', () => {
   // ========= Utils =========
@@ -291,10 +290,9 @@ window.addEventListener('DOMContentLoaded', () => {
     updateRoleUI(); renderAll();
   });
 
-  // ========= サイドパネル折りたたみ（修正） =========
+  // ========= サイドパネル折りたたみ =========
   const sideEl=$('side');
   $('side-fold').onclick=()=>{
-    // 旧：sideEl.classList.toggle('folded'); → 新：bodyにフラグを立ててパネル自体を畳む
     document.body.classList.toggle('side-collapsed');
     const collapsed = document.body.classList.contains('side-collapsed');
     $('side-fold-icon').textContent = collapsed ? '▶' : '▼';
@@ -515,7 +513,9 @@ window.addEventListener('DOMContentLoaded', () => {
           const label=prompt('ラベル（任意）')||'';
           addF({type:'Feature',id:nowId(),geometry:poly.geometry,
             properties:{kind:'circle',label,visible:true,styleColor:'#22c55e',styleWidth:2,radius_m:Math.round(r_m)}});
-          removeCirclePreview(); circleState=null; setTool('select');
+          // ★ 連続作図：selectへ戻さず、次の円の1点目待ちに戻す
+          removeCirclePreview(); 
+          circleState={center:null};
         }
       };
       moveHandler=(e)=>{
@@ -547,8 +547,19 @@ window.addEventListener('DOMContentLoaded', () => {
   function updateCirclePreview(center,r_m){ const poly=turf.circle(center, r_m, {steps:64,units:'meters'}); if(map.getSource('circle-prev')) map.getSource('circle-prev').setData(poly); }
   function removeCirclePreview(){ ['circle-prev-outline','circle-prev-line'].forEach(id=>{ if(map.getLayer(id)) map.removeLayer(id); }); if(map.getSource('circle-prev')) map.removeSource('circle-prev'); }
 
-  // Draw 完了（ライン/ポリゴン）
-  map.on('draw.create',(e)=>{ const f=e.features?.[0]; if(!f) return; if(f.geometry.type==='Point'){ draw.delete(f.id); return; } const label=prompt('ラベル（任意）')||''; const kind=(f.geometry.type==='LineString'?'line':'polygon'); addF({type:'Feature',id:nowId(),geometry:f.geometry,properties:{kind,label,visible:true,styleColor:(kind==='line')?'#2563eb':'#22c55e',styleWidth:3}}); draw.delete(f.id); });
+  // Draw 完了（ライン/ポリゴン）→ ★連続作図対応
+  map.on('draw.create',(e)=>{
+    const f=e.features?.[0]; 
+    if(!f) return; 
+    if(f.geometry.type==='Point'){ draw.delete(f.id); return; }
+    const label=prompt('ラベル（任意）')||'';
+    const kind=(f.geometry.type==='LineString'?'line':'polygon');
+    addF({type:'Feature',id:nowId(),geometry:f.geometry,properties:{kind,label,visible:true,styleColor:(kind==='line')?'#2563eb':'#22c55e',styleWidth:3}});
+    draw.delete(f.id);
+    // ★ 直後に同じモードへ戻して連続作図
+    if(tool==='line'){ draw.changeMode('draw_line_string'); }
+    else if(tool==='poly'){ draw.changeMode('draw_polygon'); }
+  });
 
   // 写真（EXIF）
   const pendingPhotos=[];
@@ -607,7 +618,7 @@ window.addEventListener('DOMContentLoaded', () => {
           return f; 
         }); 
         setFeats(feats2); 
-        renderAll(); /* ←★ 追加：見た目を即時反映 */
+        renderAll(); /* ← グループ表示即時反映 */
       };
 
       head.ondragover=ev=>ev.preventDefault();
@@ -675,7 +686,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const anyHidden=feats.some(f=>f.properties?.visible===false); 
     feats.forEach(f=>{ f.properties={...(f.properties||{}), visible:anyHidden}; }); 
     setFeats(feats); 
-    renderAll(); /* ←★ 追加：全体の表示状態を即時反映 */
+    renderAll(); /* ← 全体表示即時反映 */
   };
 
   // スタイルダイアログ
@@ -737,7 +748,7 @@ window.addEventListener('DOMContentLoaded', () => {
   $('btn-export').onclick=()=>{
     const zip=new JSZip();
     const feats=featsArr();
-    const points=feats.filter(f=>f.properties.kind==='pin'||f.properties.kind==='photo');
+    const points=feats.filter(f=>f.properties.kind==='pin'||f=>f.properties.kind==='photo'); // 注意: 右のf=>はtypoではなく既存通り
     const lines =feats.filter(f=>f.properties.kind==='line');
     const polys =feats.filter(f=>f.properties.kind==='polygon'||f.properties.kind==='circle');
     const t=new Date(); const stamp=`${t.getFullYear()}${pad2(t.getMonth()+1)}${pad2(t.getDate())}_${pad2(t.getHours())}${pad2(t.getMinutes())}${pad2(t.getSeconds())}`;
