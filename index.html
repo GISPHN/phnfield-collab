@@ -146,6 +146,24 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
   #layout{height:calc(100% - 64px - 300px)}
   #hazard-panel{top:60px;left:10px;width:70%}
 }
+  /* === 最前面に来るべきUIを確実に最前面へ === */
+#topbar,
+#hazard-panel,
+#style-dialog,
+#modal {
+  position: relative;
+  z-index: 5000 !important;
+}
+
+/* === MapLibre が生成する全レイヤを最背面へ固定（クリック遮り防止）=== */
+#map,
+#map .maplibregl-map,
+#map .maplibregl-canvas,
+#map .maplibregl-canvas-container,
+#map .maplibregl-control-container {
+  z-index: 0 !important;
+}
+
 </style>
 </head>
 <body>
