@@ -49,7 +49,7 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
 #layout{position:relative;height:calc(100% - 64px)}
 #map{
   position:absolute; inset:0 340px 0 0; transition:right .2s;
-  z-index:0;        /* ← 最背面（UIクリック可） */
+  z-index:0;
 }
 .maplibregl-canvas,
 .maplibregl-canvas-container{ z-index:0 !important; }
@@ -62,14 +62,14 @@ html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",Ro
 #side .head{padding:.6rem .75rem;border-bottom:1px solid var(--line);display:flex;gap:.5rem;align-items:center;justify-content:space-between}
 #side .head .fold{cursor:pointer; user-select:none; display:flex; align-items:center; gap:.35rem}
 #list{overflow:auto;padding:.5rem}
-#side.folded #list{display:none} /* 旧動作（互換のため残すが未使用） */
+#side.folded #list{display:none}
 
-/* ▶ サイドパネル丸ごと折りたたみ（新規追加） */
+/* ▶ サイドパネル丸ごと折りたたみ */
 body.side-collapsed #side{ width:36px; }
 body.side-collapsed #side .head{ padding:.35rem .4rem; }
-body.side-collapsed #side .head > div:last-child{ display:none; } /* +一括スタイル/全表示ボタン群を隠す */
+body.side-collapsed #side .head > div:last-child{ display:none; }
 body.side-collapsed #list{ display:none; }
-body.side-collapsed #map{ inset:0 0 0 0; } /* 地図を全幅に */
+body.side-collapsed #map{ inset:0 0 0 0; }
 
 /* Group list */
 .group{border:1px solid var(--line);border-radius:.6rem;margin-bottom:.5rem}
@@ -142,12 +142,29 @@ body.side-collapsed #map{ inset:0 0 0 0; } /* 地図を全幅に */
 button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .ghead{cursor:pointer}
 .maplibregl-ctrl-group button{cursor:pointer}
 
-/* レスポンシブ */
+/* ▶▶ 追加：データ表示パネル（左上、ハザードの下） */
+#data-panel{
+  position:absolute; left:10px; top:70px; margin-top:248px; width:320px;
+  background:#fff; border:1px solid var(--line); border-radius:.8rem; z-index:940;
+  box-shadow:0 4px 24px rgba(0,0,0,.08); padding:10px 12px;
+  font-size:14px
+}
+#data-panel h3{margin:.2em 0 .4em;font-size:15px}
+#data-panel .row{margin:.35em 0}
+#data-panel .badge{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef;border:1px solid #ccd;margin-right:6px}
+#data-panel select{font-size:14px}
+#data-panel select[multiple]{min-width:296px;min-height:110px}
+#data-panel .pill{padding:4px 8px;border-radius:999px;background:#f5f5f5;border:1px solid #ddd;user-select:none}
+#data-panel .legend span{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
+#data-panel .emg{background:#e23b3b}
+#data-panel .shel{background:#2a7be4}
+
 @media (max-width:1100px){
   #map{right:0}
   #side{position:static;width:100%;height:300px;border-left:none;border-top:1px solid var(--line)}
   #layout{height:calc(100% - 64px - 300px)}
   #hazard-panel{top:60px;left:10px;width:70%}
+  #data-panel{position:static;width:100%;margin:6px 0 0 0}
 }
 </style>
 </head>
@@ -228,6 +245,49 @@ button, .btn, .item .name, .item .eye, .item .edit, .item .paint, .item .del, .g
   </div>
 </div>
 
+<!-- ▶▶ 追加：データ表示パネル -->
+<div id="data-panel">
+  <h3>データ表示（Drive / FGB）</h3>
+
+  <div class="row">
+    <label class="pill"><input type="radio" name="areaMode" value="all" checked> 日本全国</label>
+    <label class="pill"><input type="radio" name="areaMode" value="pref"> 都道府県で絞る</label>
+    <label class="pill"><input type="radio" name="areaMode" value="muni"> 市区町村で絞る</label>
+  </div>
+
+  <div id="prefRow" class="row" style="display:none">
+    <div class="badge">都道府県（複数選択可）</div><br/>
+    <select id="prefSelect" multiple></select>
+  </div>
+
+  <div id="muniRow" class="row" style="display:none">
+    <div class="badge">市区町村（複数選択可）</div><br/>
+    <select id="muniSelect" multiple></select>
+    <div style="font-size:12px;color:#555">※都道府県を先に選ぶと市区町村リストが絞られます</div>
+  </div>
+
+  <div class="row">
+    <div class="badge">表示レイヤ</div><br/>
+    <label class="pill"><input id="chkEmergency" type="checkbox" checked> 指定緊急避難場所</label>
+    <label class="pill"><input id="chkShelter" type="checkbox" checked> 指定避難所</label>
+  </div>
+
+  <div class="row">
+    <div class="badge">ラベル</div><br/>
+    <label class="pill"><input id="chkLabel" type="checkbox" checked> 表示</label>
+    <select id="labelFieldSelect" style="max-width:180px"></select>
+  </div>
+
+  <div class="row legend">
+    <span class="emg"></span>緊急避難場所　
+    <span class="shel"></span>避難所
+  </div>
+
+  <div class="row">
+    <button id="btnApply" class="btn">表示を更新</button>
+  </div>
+</div>
+
 <!-- スタイルダイアログ -->
 <div id="style-dialog">
   <div id="style-card">
@@ -290,10 +350,9 @@ window.addEventListener('DOMContentLoaded', () => {
     updateRoleUI(); renderAll();
   });
 
-  // ========= サイドパネル折りたたみ（修正） =========
+  // ========= サイドパネル折りたたみ =========
   const sideEl=$('side');
   $('side-fold').onclick=()=>{
-    // 旧：sideEl.classList.toggle('folded'); → 新：bodyにフラグを立ててパネル自体を畳む
     document.body.classList.toggle('side-collapsed');
     const collapsed = document.body.classList.contains('side-collapsed');
     $('side-fold-icon').textContent = collapsed ? '▶' : '▼';
@@ -311,6 +370,9 @@ window.addEventListener('DOMContentLoaded', () => {
       preserveDrawingBuffer:true
     });
   }catch(e){ showErr('Map初期化エラー: '+e.message); return; }
+
+  // ← 他スクリプトからも参照できるように（今回の追加機能で使用）
+  window.appMap = map;
 
   map.on('mousedown',()=>{ map.getCanvas().style.cursor='grabbing'; });
   map.on('mouseup',()=>{ map.getCanvas().style.cursor='grab'; });
@@ -351,6 +413,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
     ensureHazardSources();
     renderAll();
+
+    // ▶▶ 追加：Drive/FGBデータの初期化
+    initDriveFGB();
   });
 
   map.addControl(new maplibregl.NavigationControl({showCompass:true,visualizePitch:true,showZoom:true}),'top-right');
@@ -409,7 +474,7 @@ window.addEventListener('DOMContentLoaded', () => {
   $('chk-dosha').addEventListener('change',e=>{ ['dosha0','dosha1','dosha2'].forEach(id=> map.setLayoutProperty(id,'visibility', e.target.checked?'visible':'none')); });
   $('hazard-opacity').addEventListener('input',e=>{ const o=+e.target.value; $('hazard-ov').textContent=o.toFixed(2); if(map.getLayer('flood')) map.setPaintProperty('flood','raster-opacity',o); ['dosha0','dosha1','dosha2'].forEach(id=> map.getLayer(id)&&map.setPaintProperty(id,'raster-opacity',o)); });
 
-  // ========= Draw & Features =========
+  // ========= Draw & Features（既存） =========
   let draw;
   try{
     draw = DrawCtor ? new DrawCtor({displayControlsDefault:false}) : null;
@@ -427,7 +492,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const yFeatures=hasY?ydoc.getArray('features'):null;
   const yGroups=hasY?ydoc.getArray('groupList'):null;
 
-  const localFeatures=[]; 
+  const localFeatures=[];
   const localGroups=[{id:'__ungroup',name:'未分類',order:0,visible:true}];
 
   const featsArr = ()=> hasY?yFeatures.toArray():localFeatures;
@@ -606,7 +671,7 @@ window.addEventListener('DOMContentLoaded', () => {
           return f; 
         }); 
         setFeats(feats2); 
-        renderAll(); /* ←★ 追加：見た目を即時反映 */
+        renderAll();
       };
 
       head.ondragover=ev=>ev.preventDefault();
@@ -674,7 +739,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const anyHidden=feats.some(f=>f.properties?.visible===false); 
     feats.forEach(f=>{ f.properties={...(f.properties||{}), visible:anyHidden}; }); 
     setFeats(feats); 
-    renderAll(); /* ←★ 追加：全体の表示状態を即時反映 */
+    renderAll();
   };
 
   // スタイルダイアログ
@@ -758,6 +823,180 @@ window.addEventListener('DOMContentLoaded', () => {
       a.click();
     }catch(e){ console.error(e); alert('スクショに失敗しました'); }
   };
+
+  /* =========================
+     ここから 追加：Drive/FGB
+     ========================= */
+  async function initDriveFGB(){
+    const DRIVE_API_KEY = "AIzaSyAphJ25zc8ff7hwVpw62s8gWK6iyFJH0cI";
+    const FILE_ID_EMERGENCY = "1Shon9KvxIHHA3Si4QF99sG7i0BR3VBh0"; // 指定緊急避難場所
+    const FILE_ID_SHELTER   = "10R9hFMPSliGgmMlEdekv96d8yTPhTpQH"; // 指定避難所
+    const COL_MUNI = "都道府県名及び市町村名";
+    const LABEL_CANDIDATES = ["施設・場所名","住所","共通ID","NO"];
+
+    // FlatGeobufを動的インポート（通常スクリプト内でもOK）
+    const fgb = await import("https://cdn.jsdelivr.net/npm/flatgeobuf@3.27.4/dist/flatgeobuf-geojson.min.js");
+
+    // パネルのUIを準備
+    const PREFS = [
+      "北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県",
+      "茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県",
+      "新潟県","富山県","石川県","福井県","山梨県","長野県",
+      "岐阜県","静岡県","愛知県","三重県",
+      "滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県",
+      "鳥取県","島根県","岡山県","広島県","山口県",
+      "徳島県","香川県","愛媛県","高知県",
+      "福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"
+    ];
+    const prefSelect = $('prefSelect'), muniSelect=$('muniSelect'),
+          labelFieldSelect=$('labelFieldSelect'),
+          chkEmergency=$('chkEmergency'), chkShelter=$('chkShelter'), chkLabel=$('chkLabel');
+
+    PREFS.forEach(p=>{ const o=document.createElement('option'); o.value=p; o.textContent=p; prefSelect.appendChild(o); });
+    document.querySelectorAll('input[name="areaMode"]').forEach(r=>{
+      r.addEventListener('change', ()=>{
+        const v = document.querySelector('input[name="areaMode"]:checked').value;
+        $('prefRow').style.display = (v==='pref'||v==='muni') ? '' : 'none';
+        $('muniRow').style.display = (v==='muni') ? '' : 'none';
+      });
+    });
+
+    $('btnApply').addEventListener('click', refresh);
+
+    const driveUrl = (id)=>`https://www.googleapis.com/drive/v3/files/${id}?alt=media&key=${DRIVE_API_KEY}&cb=${Date.now()}`;
+    const uniq = (a)=>[...new Set(a)];
+    const splitPrefCity = (full)=>{
+      const pref = PREFS.find(p=>full.startsWith(p)) || "";
+      return { pref, city: full.slice(pref.length).trim() || full };
+    };
+
+    // Mapのソース・レイヤ
+    if(!map.getSource('emergency')) map.addSource('emergency',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+    if(!map.getSource('shelter'))   map.addSource('shelter',  {type:'geojson',data:{type:'FeatureCollection',features:[]}});
+    if(!map.getLayer('emg-circle')) map.addLayer({id:'emg-circle',type:'circle',source:'emergency',
+      paint:{'circle-radius':5,'circle-color':'#e23b3b','circle-stroke-color':'#fff','circle-stroke-width':1}});
+    if(!map.getLayer('shel-circle')) map.addLayer({id:'shel-circle',type:'circle',source:'shelter',
+      paint:{'circle-radius':5,'circle-color':'#2a7be4','circle-stroke-color':'#fff','circle-stroke-width':1}});
+    if(!map.getLayer('emg-label')) map.addLayer({id:'emg-label',type:'symbol',source:'emergency',
+      layout:{'text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top'},
+      paint:{'text-halo-width':1.2,'text-halo-color':'#fff'}});
+    if(!map.getLayer('shel-label')) map.addLayer({id:'shel-label',type:'symbol',source:'shelter',
+      layout:{'text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top'},
+      paint:{'text-halo-width':1.2,'text-halo-color':'#fff'}});
+
+    // ポップアップ（属性一覧）
+    function bindPopups(layerId){
+      map.on('click', layerId, (e)=>{
+        const f=e.features[0];
+        const props=f.properties||{};
+        const html=Object.keys(props).filter(k=>k!=="__label__").map(k=>`<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(String(props[k]))}</dd>`).join("");
+        new maplibregl.Popup({closeButton:true,offset:12}).setLngLat(e.lngLat).setHTML(`<div style="font-size:13px"><dl>${html}</dl></div>`).addTo(map);
+      });
+    }
+    bindPopups('emg-circle'); bindPopups('shel-circle');
+    const escapeHtml=(s)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+    // FGB読み込み（全件ストリーム → 属性で絞る）
+    async function readFGB(fileId){
+      const feats=[]; for await (const f of fgb.deserialize(driveUrl(fileId))) feats.push(f); return feats;
+    }
+
+    let cacheEmergency=null, cacheShelter=null, allMunicipalLabels=[];
+    try{
+      const [emgFeats, shelFeats] = await Promise.all([readFGB(FILE_ID_EMERGENCY), readFGB(FILE_ID_SHELTER)]);
+      cacheEmergency = emgFeats; cacheShelter = shelFeats;
+
+      // ラベル候補
+      const firstProps = {...(emgFeats[0]?.properties||{}), ...(shelFeats[0]?.properties||{})};
+      const candidates = LABEL_CANDIDATES.filter(k=>k in firstProps);
+      const labels = candidates.length ? candidates : Object.keys(firstProps);
+      labelFieldSelect.innerHTML = "";
+      labels.forEach(k=>{ const o=document.createElement('option'); o.value=k; o.textContent=k; labelFieldSelect.appendChild(o); });
+      labelFieldSelect.value = labels[0];
+      labelFieldSelect.addEventListener('change', refresh);
+
+      // 市区町村リスト
+      const names = uniq([...emgFeats, ...shelFeats].map(f=>String(f.properties?.[COL_MUNI]||"").trim()).filter(Boolean));
+      allMunicipalLabels = names.map(n=>{
+        const {pref, city} = splitPrefCity(n);
+        return pref ? `${pref} ${city||"(名称不明)"}` : n;
+      }).sort((a,b)=>a.localeCompare(b,'ja'));
+
+      renderMuniOptions();
+      prefSelect.addEventListener('change', renderMuniOptions);
+
+      // 初回反映
+      refresh();
+    }catch(e){
+      showErr('Driveデータの読み込みに失敗：' + e.message);
+    }
+
+    function renderMuniOptions(){
+      const chosenPrefs = new Set(Array.from(prefSelect.selectedOptions).map(o=>o.value));
+      muniSelect.innerHTML = "";
+      const list = (chosenPrefs.size===0) ? allMunicipalLabels
+                  : allMunicipalLabels.filter(lbl=>chosenPrefs.has(lbl.split(" ")[0]));
+      list.forEach(lbl=>{ const o=document.createElement('option'); o.value=lbl; o.textContent=lbl; muniSelect.appendChild(o); });
+    }
+
+    function applyVisibility(){
+      map.setLayoutProperty('emg-circle','visibility', chkEmergency.checked ? 'visible':'none');
+      map.setLayoutProperty('shel-circle','visibility', chkShelter.checked ? 'visible':'none');
+      const vis = chkLabel.checked ? 'visible':'none';
+      map.setLayoutProperty('emg-label','visibility', vis);
+      map.setLayoutProperty('shel-label','visibility', vis);
+    }
+    ['chkEmergency','chkShelter','chkLabel'].forEach(id=>$(id).addEventListener('change', applyVisibility));
+
+    function fitToData(){
+      const fc1 = map.getSource('emergency')._data;
+      const fc2 = map.getSource('shelter')._data;
+      const all=[...fc1.features, ...fc2.features];
+      if(!all.length) return;
+      let minX=180,minY=90,maxX=-180,maxY=-90;
+      all.forEach(f=>{
+        if(f.geometry.type!=='Point') return;
+        const [x,y]=f.geometry.coordinates;
+        if(x<minX)minX=x; if(y<minY)minY=y; if(x>maxX)maxX=x; if(y>maxY)maxY=y;
+      });
+      if(minX<maxX && minY<maxY) map.fitBounds([[minX,minY],[maxX,maxY]],{padding:40,maxZoom:13});
+    }
+
+    function refresh(){
+      const mode = document.querySelector('input[name="areaMode"]:checked').value;
+      const prefs = new Set(Array.from(prefSelect.selectedOptions).map(o=>o.value));
+      const munis = new Set(Array.from(muniSelect.selectedOptions).map(o=>o.value)); // "奈良県 奈良市"
+      const labelField = labelFieldSelect.value;
+
+      const filterByArea = (fullName)=>{
+        if (!fullName) return mode==='all';
+        const {pref, city} = splitPrefCity(fullName);
+        if (mode==='all') return true;
+        if (mode==='pref') return prefs.size===0 ? true : prefs.has(pref);
+        if (mode==='muni'){
+          if (munis.size===0 && prefs.size===0) return true;
+          if (munis.size>0) return munis.has(`${pref} ${city}`);
+          return prefs.has(pref);
+        }
+        return true;
+      };
+
+      const decorate = (f)=>{
+        const p=f.properties||{};
+        const label = (p[labelField] ?? p["施設・場所名"] ?? p["住所"] ?? p["共通ID"] ?? "");
+        return {...f, properties:{...p, __label__: String(label)}};
+      };
+
+      const emgFiltered = (cacheEmergency||[]).filter(f=>filterByArea(String(f.properties?.[COL_MUNI]||""))).map(decorate);
+      const shlFiltered = (cacheShelter  ||[]).filter(f=>filterByArea(String(f.properties?.[COL_MUNI]||""))).map(decorate);
+
+      map.getSource('emergency').setData({type:'FeatureCollection', features:emgFiltered});
+      map.getSource('shelter').setData({type:'FeatureCollection', features:shlFiltered});
+
+      applyVisibility();
+      fitToData();
+    }
+  }
 
 }); // DOMContentLoaded
 </script>
