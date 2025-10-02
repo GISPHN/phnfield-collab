@@ -828,7 +828,6 @@ window.addEventListener('DOMContentLoaded', () => {
      ここから 追加：Drive/FGB
      ========================= */
   async function initDriveFGB(){
-    const DRIVE_API_KEY = "AIzaSyAphJ25zc8ff7hwVpw62s8gWK6iyFJH0cI";
     const FILE_ID_EMERGENCY = "1Shon9KvxIHHA3Si4QF99sG7i0BR3VBh0"; // 指定緊急避難場所
     const FILE_ID_SHELTER   = "10R9hFMPSliGgmMlEdekv96d8yTPhTpQH"; // 指定避難所
     const COL_MUNI = "都道府県名及び市町村名";
@@ -863,7 +862,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     $('btnApply').addEventListener('click', refresh);
 
-    const driveUrl = (id)=>`https://www.googleapis.com/drive/v3/files/${id}?alt=media&key=${DRIVE_API_KEY}&cb=${Date.now()}`;
+    const driveUrl = (id)=>`https://drive.usercontent.google.com/download?id=${id}&export=download&cb=${Date.now()}`;
     const uniq = (a)=>[...new Set(a)];
     const splitPrefCity = (full)=>{
       const pref = PREFS.find(p=>full.startsWith(p)) || "";
