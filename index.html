@@ -316,7 +316,12 @@ window.addEventListener('DOMContentLoaded', () => {
   $('side-fold').onclick=()=>{ document.body.classList.toggle('side-collapsed'); $('side-fold-icon').textContent = document.body.classList.contains('side-collapsed') ? '▶' : '▼'; };
 
   /* ===== Map ===== */
-  const EMPTY_STYLE={version:8,sources:{},layers:[]};
+  const EMPTY_STYLE={
+  version: 8,
+  glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+  sources: {},
+  layers: []
+  };
   let map;
   try{
     map = new maplibregl.Map({ container:'map', style:EMPTY_STYLE, center:[135.79,34.51], zoom:8.2, attributionControl:false, preserveDrawingBuffer:true });
