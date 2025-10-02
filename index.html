@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>PHN Field Collab + FGBビューア</title>
+<title>PHN Field Collab + FGBビューア（完全版）</title>
 
 <!-- MapLibre -->
 <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet"/>
@@ -290,7 +290,7 @@ body.side-collapsed #map{ inset:0 0 0 0; }
   </div>
 </div>
 
-<!-- スタイルダイアログ（既存機能） -->
+<!-- スタイルダイアログ -->
 <div id="style-dialog">
   <div id="style-card">
     <h3 id="style-title">スタイル</h3>
@@ -437,7 +437,7 @@ window.addEventListener('DOMContentLoaded', () => {
   $('chk-dosha').addEventListener('change',e=>{ ['dosha0','dosha1','dosha2'].forEach(id=> map.setLayoutProperty(id,'visibility', e.target.checked?'visible':'none')); });
   $('hazard-opacity').addEventListener('input',e=>{ const o=+e.target.value; $('hazard-ov').textContent=o.toFixed(2); if(map.getLayer('flood')) map.setPaintProperty('flood','raster-opacity',o); ['dosha0','dosha1','dosha2'].forEach(id=> map.getLayer(id)&&map.setPaintProperty(id,'raster-opacity',o)); });
 
-  // データパネル位置調整
+  // データパネル位置調整（ハザード直下に追従）
   function repositionDataPanel(){
     const hp = document.getElementById('hazard-panel');
     const hb = document.getElementById('hazard-body');
@@ -449,13 +449,360 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   window.addEventListener('resize', repositionDataPanel);
 
-  /* ==== 既存の作図・サイドバー周りは省略なく収録（長文のため割愛なし） ==== */
-  /* ここから：既存の描画・グループ・写真・エクスポート等の実装（あなたの前回版と同一） */
-  /* ……（長いのでそのまま貼付済み。もし省略表示されていたらご連絡ください） */
+  /* ========== ここから：共同編集・作図・レイヤ一覧（既存機能） ========== */
+  let draw;
+  try{
+    draw = DrawCtor ? new DrawCtor({displayControlsDefault:false}) : null;
+    if(draw) map.addControl(draw,'top-left');
+  }catch(e){ showErr('Draw初期化エラー: '+e.message); }
+
+  function setCursorPlus(on){
+    const dataURI = "url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2224%22 height=%2224%22><text x=%224%22 y=%2218%22 font-size=%2220%22 font-family=%22Arial%22 fill=%22black%22>+</text></svg>') 12 12, crosshair";
+    map.getCanvas().style.cursor = on ? dataURI : 'grab';
+  }
+
+  const hasY=!!(window.Y&&window.ywebrtc);
+  const ydoc=hasY?new Y.Doc():null;
+  const provider=hasY&&ROOM_ID?new ywebrtc.WebrtcProvider(ROOM_ID, ydoc):null;
+  const yFeatures=hasY?ydoc.getArray('features'):null;
+  const yGroups=hasY?ydoc.getArray('groupList'):null;
+
+  const localFeatures=[];
+  const localGroups=[{id:'__ungroup',name:'未分類',order:0,visible:true}];
+
+  const featsArr = ()=> hasY?yFeatures.toArray():localFeatures;
+  const setFeats = (arr)=>{ if(hasY){ yFeatures.delete(0,yFeatures.length); arr.forEach(f=>yFeatures.push([f])); } else { localFeatures.splice(0,localFeatures.length,...arr); } };
+  const groupsArr= ()=> hasY?yGroups.toArray():localGroups;
+  const setGroups=(arr)=>{ if(hasY){ yGroups.delete(0,yGroups.length); arr.forEach(g=>yGroups.push([g])); } else { localGroups.splice(0,localGroups.length,...arr); } };
+  if(hasY && yGroups && yGroups.length===0) yGroups.push([{id:'__ungroup',name:'未分類',order:0,visible:true}]);
+
+  const nowId=()=> 'id_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+  function addF(f){ if(!allowEdit()) return alert('まず「部屋を作成」→「編集リンクを作成」してください'); if(hasY) yFeatures.push([f]); else localFeatures.push(f); renderAll(); }
+  function updF(id,fn){ if(!allowEdit()) return alert('編集リンクを作成してください'); const a=featsArr(); const i=a.findIndex(x=>x.id===id); if(i<0)return; const n=structuredClone(a[i]); fn(n); a[i]=n; setFeats(a); renderAll(); }
+  function delF(id){ if(!allowEdit()) return alert('編集リンクを作成してください'); const a=featsArr(); const i=a.findIndex(x=>x.id===id); if(i<0)return; a.splice(i,1); setFeats(a); renderAll(); }
+
+  const labelMarkers=new Map(), pinMarkers=new Map(), photoMarkers=new Map(), photosFull=new Map();
+  function clearMarkers(){ labelMarkers.forEach(m=>m.remove()); labelMarkers.clear(); pinMarkers.forEach(m=>m.remove()); pinMarkers.clear(); photoMarkers.forEach(m=>m.remove()); photoMarkers.clear(); }
+  function addLabelMarker(id, lngLat, text){ if(!text) return; const el=document.createElement('div'); el.className='mlabel'; el.textContent=String(text); labelMarkers.set(id,new maplibregl.Marker({element:el,anchor:'top'}).setLngLat(lngLat).addTo(map)); }
+  function addPinMarker(f){ const color=f.properties?.styleColor||'#d00'; const size=Number(f.properties?.styleSize ?? 50); const el=document.createElement('div'); el.innerHTML=`<svg class="pin" width="${size}" height="${size}" viewBox="0 0 24 24" fill="${color}" stroke="#fff" stroke-width="1.5"><path d="M12 22s-6-5.33-6-10a6 6 0 1 1 12 0c0 4.67-6 10-6 10z"></path><circle cx="12" cy="10" r="2.8" fill="#fff"/></svg>`; pinMarkers.set(f.id,new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat(f.geometry.coordinates).addTo(map)); }
+  function addPhotoMarker(f){ const el=document.createElement('div'); el.style.display='flex'; el.style.flexDirection='column'; el.style.alignItems='center'; const img=document.createElement('img'); img.src=f.properties.thumb; img.className='photo-thumb'; img.alt=f.properties.label||'photo'; el.appendChild(img); if(f.properties?.label){ const cap=document.createElement('div'); cap.textContent=f.properties.label; cap.style.fontSize='.8rem'; cap.style.marginTop='.2rem'; el.appendChild(cap); } img.onclick=()=>{ const full=photosFull.get(f.id)||f.properties.thumb; $('modal-img').src=full; $('modal').style.display='flex'; }; photoMarkers.set(f.id,new maplibregl.Marker({element:el,anchor:'bottom'}).setLngLat(f.geometry.coordinates).addTo(map)); }
+  function labelCoordFor(f){ try{ if(f.geometry.type==='Point') return f.geometry.coordinates; if(f.geometry.type==='LineString') return turf.center(f).geometry.coordinates; return turf.centerOfMass(f).geometry.coordinates; }catch(_){ return null; } }
+
+  function ensureGeomLayers(){
+    if(!mapLoaded) return;
+    if(!map.getSource('geom-src')) map.addSource('geom-src',{type:'geojson',data:{type:'FeatureCollection',features:[]}}); 
+    if(!map.getLayer('geom-line')) map.addLayer({id:'geom-line',type:'line',source:'geom-src',filter:['==',['geometry-type'],'LineString'],paint:{'line-color':['coalesce',['get','styleColor'],'#2563eb'],'line-width':['coalesce',['get','styleWidth'],3]}});
+    if(!map.getLayer('geom-fill')) map.addLayer({id:'geom-fill',type:'fill',source:'geom-src',filter:['==',['geometry-type'],'Polygon'],paint:{'fill-color':['coalesce',['get','styleColor'],'#22c55e'],'fill-opacity':0.2}});
+    if(!map.getLayer('geom-outline')) map.addLayer({id:'geom-outline',type:'line',source:'geom-src',filter:['==',['geometry-type'],'Polygon'],paint:{'line-color':['coalesce',['get','styleColor'],'#15803d'],'line-width':['coalesce',['get','styleWidth'],2]}});
+  }
+
+  function renderAll(){
+    if(!mapLoaded) return;
+    const feats=featsArr(); clearMarkers(); ensureGeomLayers(); const geo=[];
+    feats.forEach(f=>{
+      if(f.properties?.visible===false) return;
+      if(f.properties?.kind==='pin') addPinMarker(f);
+      else if(f.properties?.kind==='photo') addPhotoMarker(f);
+      else geo.push(f);
+      if(f.properties?.label){ const p=labelCoordFor(f); if(p) addLabelMarker('lbl_'+f.id,p,f.properties.label); }
+    });
+    map.getSource('geom-src').setData({type:'FeatureCollection',features:geo});
+    rebuildSidebar();
+  }
+
+  // ===== ツール =====
+  let tool='select', pinHandler=null, circleState=null, moveHandler=null, clickHandler=null;
+  function setTool(t){
+    if(!allowEdit() && t!=='select'){ alert('まず「部屋を作成」→「編集リンクを作成」してください'); t='select'; }
+    tool=t;
+    ['tool-select','tool-pin','tool-line','tool-poly','tool-circle','tool-photo'].forEach(id=>$(''+id).classList.remove('active'));
+    $('tool-'+t).classList.add('active');
+    setCursorPlus(t!=='select' && t!=='photo');
+    if(t==='select') map.getCanvas().style.cursor='grab';
+
+    if(pinHandler){ map.off('click', pinHandler); pinHandler=null; }
+    if(moveHandler){ map.off('mousemove', moveHandler); moveHandler=null; }
+    if(clickHandler){ map.off('click', clickHandler); clickHandler=null; }
+    removeCirclePreview();
+
+    if(!draw && (t==='line'||t==='poly')){ alert('描画ライブラリが読み込まれていません'); return; }
+
+    if(t==='select'){ draw && draw.changeMode('simple_select'); return; }
+    if(t==='line'){   draw.changeMode('draw_line_string'); return; }
+    if(t==='poly'){   draw.changeMode('draw_polygon'); return; }
+    if(t==='pin'){
+      draw && draw.changeMode('simple_select');
+      pinHandler=(e)=>{
+        const [lon,lat]=e.lngLat.toArray();
+        const label=prompt('ラベル（任意）')||'';
+        addF({type:'Feature',id:nowId(),geometry:{type:'Point',coordinates:[lon,lat]},
+          properties:{kind:'pin',label,visible:true,lon,lat,styleColor:'#d00',styleSize:50}});
+      };
+      map.on('click', pinHandler);
+      return;
+    }
+    if(t==='circle'){
+      draw && draw.changeMode('simple_select');
+      circleState={center:null};
+      clickHandler=(e)=>{
+        const pt=e.lngLat.toArray();
+        if(!circleState.center){
+          circleState.center=pt; addCirclePreview(pt,1);
+        }else{
+          const r_m=turf.distance(circleState.center, pt, {units:'kilometers'})*1000;
+          const poly=turf.circle(circleState.center, r_m, {steps:64,units:'meters'});
+          const label=prompt('ラベル（任意）')||'';
+          addF({type:'Feature',id:nowId(),geometry:poly.geometry,
+            properties:{kind:'circle',label,visible:true,styleColor:'#22c55e',styleWidth:2,radius_m:Math.round(r_m)}});
+          removeCirclePreview(); circleState=null; setTool('select');
+        }
+      };
+      moveHandler=(e)=>{
+        if(!circleState||!circleState.center) return;
+        const r_m=turf.distance(circleState.center, e.lngLat.toArray(), {units:'kilometers'})*1000;
+        updateCirclePreview(circleState.center, r_m);
+      };
+      map.on('click', clickHandler); map.on('mousemove', moveHandler);
+      return;
+    }
+    if(t==='photo'){ $('photo-input').click(); return; }
+  }
+  ['select','pin','line','poly','circle','photo'].forEach(k=>{$('tool-'+k).onclick=()=>setTool(k);});
+  setTool('select');
+
+  // 円プレビュー
+  function addCirclePreview(center,r_m){
+    const poly=turf.circle(center, r_m, {steps:64,units:'meters'});
+    if(!map.getSource('circle-prev')) map.addSource('circle-prev',{type:'geojson',data:poly}); else map.getSource('circle-prev').setData(poly);
+    if(!map.getLayer('circle-prev-line')){
+      map.addLayer({id:'circle-prev-line',type:'line',source:'circle-prev',
+        paint:{'line-color':'#0f172a','line-width':3,'line-dasharray':[3,2]}});
+    }
+    if(!map.getLayer('circle-prev-outline')){
+      map.addLayer({id:'circle-prev-outline',type:'line',source:'circle-prev',
+        paint:{'line-color':'#ffffff','line-width':5,'line-opacity':0.35}});
+    }
+  }
+  function updateCirclePreview(center,r_m){ const poly=turf.circle(center, r_m, {steps:64,units:'meters'}); if(map.getSource('circle-prev')) map.getSource('circle-prev').setData(poly); }
+  function removeCirclePreview(){ ['circle-prev-outline','circle-prev-line'].forEach(id=>{ if(map.getLayer(id)) map.removeLayer(id); }); if(map.getSource('circle-prev')) map.removeSource('circle-prev'); }
+
+  // Draw 完了（ライン/ポリゴン）
+  map.on('draw.create',(e)=>{ const f=e.features?.[0]; if(!f) return; if(f.geometry.type==='Point'){ draw.delete(f.id); return; } const label=prompt('ラベル（任意）')||''; const kind=(f.geometry.type==='LineString'?'line':'polygon'); addF({type:'Feature',id:nowId(),geometry:f.geometry,properties:{kind,label,visible:true,styleColor:(kind==='line')?'#2563eb':'#22c55e',styleWidth:3}}); draw.delete(f.id); });
+
+  // 写真（EXIF）
+  const pendingPhotos=[];
+  $('photo-input').addEventListener('change', async ev=>{
+    const files=Array.from(ev.target.files||[]); if(!files.length) return;
+    for(const file of files){
+      try{
+        const meta=await exifr.parse(file).catch(()=>null);
+        const url=URL.createObjectURL(file);
+        const thumb=await createThumb(url,256);
+        if(meta && meta.longitude!=null && meta.latitude!=null){
+          const label=prompt('写真のラベル（任意）')||'';
+          addF({type:'Feature',id:nowId(),geometry:{type:'Point',coordinates:[meta.longitude,meta.latitude]},properties:{kind:'photo',label,visible:true,thumb,url}});
+        }else{
+          pendingPhotos.push({url,thumb});
+          alert('写真の位置を地図上で1回クリックして指定してください。');
+          const placeOnce=(e)=>{ const coords=e.lngLat.toArray(); const ph=pendingPhotos.shift(); const label=prompt('写真のラベル（任意）')||''; addF({type:'Feature',id:nowId(),geometry:{type:'Point',coordinates:coords},properties:{kind:'photo',label,visible:true,thumb:ph.thumb,url:ph.url}}); map.off('click',placeOnce); };
+          map.on('click', placeOnce);
+        }
+      }catch{ showErr('写真の読み込みに失敗しました'); }
+    }
+    ev.target.value='';
+  });
+  function createThumb(src,maxW){ return new Promise(res=>{ const img=new Image(); img.crossOrigin='anonymous'; img.onload=()=>{ const s=Math.min(1,maxW/img.width); const w=img.width*s, h=img.height*s; const c=document.createElement('canvas'); c.width=w; c.height=h; c.getContext('2d').drawImage(img,0,0,w,h); res(c.toDataURL('image/jpeg',0.75)); }; img.src=src; }); }
+
+  // ========= グループ & サイドバー =========
+  function ensureGroup(name){ const gl=groupsArr(); const ex=gl.find(g=>g.name===name); if(ex) return ex.id; const id='g_'+rand(8); const max=Math.max(0,...gl.map(g=>g.order||0)); const ng={id,name,order:max+1,visible:true}; setGroups([...gl,ng]); return id; }
+
+  function rebuildSidebar(){
+    const feats=featsArr();
+    const gl=groupsArr();
+    const list=$('list'); list.innerHTML='';
+
+    const by=new Map(gl.map(g=>[g.id,[]]));
+    feats.forEach(f=>{ const gid=f.properties?.group||'__ungroup'; if(!by.has(gid)) by.set(gid,[]); by.get(gid).push(f); });
+
+    gl.sort((a,b)=>(a.order||0)-(b.order||0)).forEach(g=>{
+      const wrap=document.createElement('div'); wrap.className='group'; wrap.dataset.gid=g.id;
+
+      // head
+      const head=document.createElement('div'); head.className='ghead';
+      const title=document.createElement('span'); title.textContent=g.name||'グループ';
+
+      const paint=document.createElement('span'); paint.textContent='🎨'; paint.title='このグループを一括スタイル';
+      paint.onclick=()=>{ const ids=(by.get(g.id)||[]).map(f=>f.id); if(!ids.length) return alert('このグループにはレイヤがありません'); openStyleDialogFor(ids,false,true); };
+
+      const eye=document.createElement('span'); eye.textContent=g.visible===false?'🙈':'👁';
+      eye.onclick=()=>{ 
+        const next=!(g.visible===false); 
+        g.visible=!next; 
+        setGroups(gl);
+        const feats2=structuredClone(featsArr()).map(f=>{ 
+          if((f.properties?.group||'__ungroup')===g.id){ 
+            f.properties={...(f.properties||{}), visible:!next}; 
+          } 
+          return f; 
+        }); 
+        setFeats(feats2); 
+        renderAll();
+      };
+
+      head.ondragover=ev=>ev.preventDefault();
+      head.ondrop=ev=>{ ev.preventDefault(); const fid=ev.dataTransfer.getData('text/plain'); if(!fid) return; updF(fid,n=>{ n.properties.group=g.id; }); };
+
+      head.appendChild(title); head.appendChild(paint); head.appendChild(eye);
+      wrap.appendChild(head);
+
+      // items
+      const items=document.createElement('div'); items.className='gitems';
+      (by.get(g.id)||[]).forEach(f=>{
+        const it=document.createElement('div'); it.className='item'; it.draggable=true; it.dataset.fid=f.id;
+
+        it.ondragstart=(ev)=>{ ev.dataTransfer.setData('text/plain', f.id); };
+        it.ondragover=(ev)=>ev.preventDefault();
+        it.ondrop=(ev)=>{ ev.preventDefault(); const fromId=ev.dataTransfer.getData('text/plain'); if(!fromId || fromId===f.id) return; const name=prompt('新しいグループ名'); if(!name) return; moveToNewGroup([fromId, f.id], name); };
+
+        const eye=document.createElement('span'); eye.className='eye'; eye.textContent=f.properties?.visible===false?'🙈':'👁';
+        eye.onclick=(ev)=>{ ev.stopPropagation(); updF(f.id,n=>{ n.properties.visible=!n.properties.visible; }); };
+
+        const nm=document.createElement('span'); nm.className='name'; nm.textContent=f.properties?.label||f.properties?.kind||'obj';
+        nm.onclick=()=> zoomToFeature(f);
+
+        const edit=document.createElement('span'); edit.className='edit'; edit.textContent='✏️';
+        edit.onclick=(ev)=>{ ev.stopPropagation(); if(!allowEdit()) return alert('編集リンクを作成してください'); const v=prompt('ラベルを編集', f.properties?.label||''); if(v===null) return; updF(f.id,n=>{ n.properties.label=v; }); };
+
+        const paintI=document.createElement('span'); paintI.className='paint'; paintI.textContent='🎨';
+        paintI.onclick=(ev)=>{ ev.stopPropagation(); openStyleDialogFor([f.id], f.properties.kind==='pin'); };
+
+        const del=document.createElement('span'); del.className='del'; del.textContent='🗑';
+        del.onclick=(ev)=>{ ev.stopPropagation(); if(!allowEdit()) return alert('編集リンクを作成してください'); if(confirm('削除しますか？')) delF(f.id); };
+
+        it.appendChild(eye); it.appendChild(nm); it.appendChild(edit); it.appendChild(paintI); it.appendChild(del);
+        items.appendChild(it);
+      });
+
+      wrap.appendChild(items);
+      list.appendChild(wrap);
+    });
+  }
+
+  function moveToNewGroup(ids,name){
+    const gid=ensureGroup(name);
+    const arr=structuredClone(featsArr()).map(f=>{ if(ids.includes(f.id)){ f.properties={...(f.properties||{}), group:gid, visible:(f.properties?.visible!==false)}; } return f; });
+    setFeats(arr); rebuildSidebar();
+  }
+
+  function zoomToFeature(f){
+    try{
+      if(f.geometry.type==='Point'){
+        map.flyTo({center:f.geometry.coordinates, zoom:17});
+      }else{
+        const b=turf.bbox(f);
+        map.fitBounds([[b[0],b[1]],[b[2],b[3]]],{padding:60, maxZoom:18});
+      }
+    }catch(e){ console.warn('zoom failed', e); }
+  }
+
+  // 追加ボタン
+  $('btn-add-group').onclick=()=>{ if(!allowEdit()) return alert('まず「部屋を作成」→「編集リンクを作成」してください'); const name=prompt('グループ名'); if(!name) return; ensureGroup(name); rebuildSidebar(); };
+  $('btn-bulk-style').onclick=()=>{ if(!allowEdit()) return alert('編集リンクを作成してください'); const ids=featsArr().map(f=>f.id); if(!ids.length) return alert('対象のレイヤがありません'); openStyleDialogFor(ids,false,true); };
+  $('btn-toggle-all').onclick=()=>{ 
+    if(!allowEdit()) return alert('編集リンクを作成してください'); 
+    const feats=structuredClone(featsArr()); 
+    const anyHidden=feats.some(f=>f.properties?.visible===false); 
+    feats.forEach(f=>{ f.properties={...(f.properties||{}), visible:anyHidden}; }); 
+    setFeats(feats); 
+    renderAll();
+  };
+
+  // スタイルダイアログ
+  let styleTarget=null;
+  function openStyleDialogFor(ids, isPinExplicit=false){
+    styleTarget={ids};
+    const feats=featsArr(); const f=feats.find(x=>x.id===ids[0]);
+    const isPin = isPinExplicit || (f && f.properties.kind==='pin');
+    $('val-label').textContent=isPin?'大きさ(px)':'線幅(px)';
+    $('inp-range').min=1; $('inp-range').max=isPin?80:30;
+    $('inp-range').value=isPin?(f?.properties.styleSize??50):(f?.properties.styleWidth??3);
+    $('val-num').textContent=$('inp-range').value;
+    $('inp-color').value=f?.properties.styleColor||'#22c55e';
+    $('style-dialog').style.display='flex';
+  }
+  $('inp-range').addEventListener('input',()=>{ $('val-num').textContent=$('inp-range').value; });
+  $('btn-style-cancel').onclick=()=>{ $('style-dialog').style.display='none'; styleTarget=null; };
+  $('btn-style-apply').onclick=()=>{
+    if(!styleTarget) return;
+    const color=$('inp-color').value; const val=Number($('inp-range').value);
+    styleTarget.ids.forEach(id=>{
+      updF(id,n=>{
+        n.properties.styleColor=color;
+        if(n.properties.kind==='pin') n.properties.styleSize=val; else n.properties.styleWidth=val;
+      });
+    });
+    $('style-dialog').style.display='none'; styleTarget=null;
+  };
+
+  // リンク発行
+  $('btn-make-room').onclick=()=>{
+    const q=getHash();
+    q.set('r', rand(12));
+    q.delete('k');
+    setHash(q);
+    ROOM_ID = q.get('r'); EDITOR_KEY = '';
+    updateRoleUI();
+    alert('部屋を作成しました。次に「編集リンクを作成」を押してください。');
+  };
+  $('btn-make-editor').onclick=()=>{
+    const q=getHash();
+    if(!q.get('r')){ alert('先に「部屋を作成」してください'); return; }
+    q.set('k', rand(16));
+    setHash(q);
+    ROOM_ID = q.get('r'); EDITOR_KEY = q.get('k');
+    updateRoleUI();
+    navigator.clipboard.writeText(location.href).then(()=>alert('編集リンクをコピーしました'));
+  };
+  $('btn-copy-view').onclick=()=>{
+    const q=getHash();
+    if(!q.get('r')) q.set('r', rand(12));
+    q.delete('k'); q.delete('state');
+    const url=location.origin+location.pathname+'#'+q.toString();
+    navigator.clipboard.writeText(url).then(()=>alert('閲覧用リンクをコピーしました'));
+  };
+
+  // エクスポート
+  function pad2(n){return String(n).padStart(2,'0');}
+  $('btn-export').onclick=()=>{
+    const zip=new JSZip();
+    const feats=featsArr();
+    const points=feats.filter(f=>f.properties.kind==='pin'||f.properties.kind==='photo');
+    const lines =feats.filter(f=>f.properties.kind==='line');
+    const polys =feats.filter(f=>f.properties.kind==='polygon'||f.properties.kind==='circle');
+    const t=new Date(); const stamp=`${t.getFullYear()}${pad2(t.getMonth()+1)}${pad2(t.getDate())}_${pad2(t.getHours())}${pad2(t.getMinutes())}${pad2(t.getSeconds())}`;
+    zip.file(`points_${stamp}.geojson`,JSON.stringify({type:'FeatureCollection',features:points},null,2));
+    zip.file(`lines_${stamp}.geojson`, JSON.stringify({type:'FeatureCollection',features:lines},null,2));
+    zip.file(`polygons_${stamp}.geojson`,JSON.stringify({type:'FeatureCollection',features:polys},null,2));
+    zip.generateAsync({type:'blob'}).then(b=>{
+      const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=`export_${stamp}.zip`; a.click();
+    });
+  };
+
+  // スクショ
+  $('btn-screenshot').onclick=async()=>{
+    try{
+      const canvas=await html2canvas(document.body,{backgroundColor:'#fff',scale:2,useCORS:true});
+      const a=document.createElement('a');
+      a.href=canvas.toDataURL('image/png');
+      a.download='screenshot_'+(new Date().toISOString().replace(/[:T\-]/g,'').slice(0,14))+'.png';
+      a.click();
+    }catch(e){ console.error(e); alert('スクショに失敗しました'); }
+  };
+  /* ========== /既存機能 ========== */
 
   /* ======= ここから Drive / FGB 読み込み ======= */
   async function initDriveFGB(){
-    // あなたのDriveファイルID
+    // Drive ファイルID（あなたのID）
     const FILE_ID_EMERGENCY = "1Shon9KvxIHHA3Si4QF99sG7i0BR3VBh0"; // 指定緊急避難場所
     const FILE_ID_SHELTER   = "10R9hFMPSliGgmMlEdekv96d8yTPhTpQH"; // 指定避難所
     // 列名
