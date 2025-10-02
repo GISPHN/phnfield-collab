@@ -157,6 +157,45 @@ body.side-collapsed #map{ inset:0 0 0 0; }
   .panel{position:static;width:calc(100% - 20px);margin:8px 10px}
 }
 </style>
+<!-- ========================== -->
+<!-- SUPABASE 連携（ここから）  -->
+<!-- ========================== -->
+<!-- 1) Supabase JS SDK を読み込み -->
+<script src="https://esm.sh/@supabase/supabase-js@2"></script>
+
+<!-- 2) 設定：Project URL / anon key をあなたの値に置き換えてください -->
+<script>
+  // ★★★ 必ず置き換え ★★★
+  const SUPABASE_URL  = 'https://tdoxxwhkvdguyfrofnaw.supabase.co';  // 例: https://abcd1234.supabase.co
+  const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkb3h4d2hrdmRndXlmcm9mbmF3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk0MTQ0NDQsImV4cCI6MjA3NDk5MDQ0NH0.h2ZnTGr0jml2V7SUvEaOSzjNXxKvCJuJryFEyEkrQQc';
+
+  // 変更不要：クライアント作成＆部屋ID（#r=xxxx）取得
+  window.__supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  window.__room = new URLSearchParams(location.hash.slice(1)).get('r') || 'default';
+</script>
+
+<!-- 3) 連携UIの軽いスタイル（見た目だけ。邪魔なら後で消せます） -->
+<style>
+  /* 左下の操作パネル */
+  .supabox {
+    position: absolute; left: 10px; bottom: 10px;
+    background: rgba(255,255,255,0.92); padding: 10px 12px;
+    border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    font-family: system-ui, sans-serif; z-index: 999;
+  }
+  .supabox h4 { margin: 0 0 6px; font-size: 14px; font-weight: 700; }
+  .supabox .row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .supabox button {
+    padding: 6px 9px; border-radius: 8px; border: 1px solid #e5e7eb;
+    background: #f8fafc; cursor: pointer; font-size: 12px;
+  }
+  .supabox button:hover { background: #eef2ff; }
+  .supabox .danger { background:#fee2e2; border-color:#fecaca; }
+</style>
+<!-- ========================== -->
+<!-- SUPABASE 連携（ここまで）  -->
+<!-- ========================== -->
+<!-- ここが </head> の直前になるように貼る -->
 </head>
 <body>
 <!-- ===== Topbar ===== -->
@@ -857,5 +896,151 @@ window.addEventListener('DOMContentLoaded', () => {
   function renderAll(){ /* 上で定義済み、ここでは空呼び出し用に置いています */ }
 });
 </script>
+<!-- ========================== -->
+<!-- SUPABASE 連携（本体：ここから） -->
+<!-- ========================== -->
+<script>
+(function(){
+  // 既存の map / draw が初期化されるのを待ってからフックします
+  function whenReady(check, fn, interval=300, timeout=15000){
+    const start = Date.now();
+    const t = setInterval(()=>{
+      if (check()) { clearInterval(t); fn(); }
+      else if (Date.now()-start > timeout) { clearInterval(t); console.warn('Supabase hook timeout'); }
+    }, interval);
+  }
+
+  // ---- 1) 読み込み：部屋(__room)に保存された図形を MapboxDraw へ追加
+  async function loadFeatures(){
+    try{
+      const { data, error } = await __supa
+        .from('features').select('id,geojson').eq('room', __room).order('id');
+      if(error) throw error;
+      const feats = (data||[]).map(r=>r.geojson);
+      if (window.draw && feats.length){
+        draw.deleteAll();
+        draw.add({ type:'FeatureCollection', features:feats });
+      }
+      toast('読み込み完了 ('+(feats.length||0)+'件)');
+    }catch(e){ console.error(e); toast('読み込み失敗: '+e.message, true); }
+  }
+
+  // ---- 2) 保存：Draw 上の全図形を新規追加（簡単版）
+  async function saveFeatures(){
+    try{
+      if(!window.draw){ toast('描画ツール未初期化', true); return; }
+      const fc = draw.getAll();
+      if(!fc.features?.length){ toast('保存する図形がありません', true); return; }
+      const rows = fc.features.map(f=>({
+        room: __room,
+        kind: (f.properties?.kind)||f.geometry?.type?.toLowerCase()||'feature',
+        geojson: f,
+        props: f.properties||{}
+      }));
+      const { error } = await __supa.from('features').insert(rows);
+      if(error) throw error;
+      toast('保存しました');
+    }catch(e){ console.error(e); toast('保存失敗: '+e.message, true); }
+  }
+
+  // ---- 3) GPSロガー：開始・停止・軌跡表示
+  let watchId=null, currentTrackId=null;
+
+  async function startGpsLog(name='フィールド調査'){
+    if(!navigator.geolocation){ toast('位置情報が使えません', true); return; }
+    const { data: tk, error: e1 } = await __supa.from('tracks')
+      .insert({ room: __room, name }).select().single();
+    if(e1){ toast('トラック作成失敗: '+e1.message, true); return; }
+    currentTrackId = tk.id;
+
+    let last=null;
+    watchId = navigator.geolocation.watchPosition(async pos=>{
+      const { longitude:lon, latitude:lat, accuracy:acc, speed, heading } = pos.coords;
+      const tiso = new Date(pos.timestamp).toISOString();
+      // 10m未満はスキップ
+      if(last){
+        const dx=Math.abs(lon-last.lon)*111320, dy=Math.abs(lat-last.lat)*110540;
+        if(dx<10 && dy<10) return;
+      }
+      last={lon,lat};
+      await __supa.from('track_points').insert({ track_id: currentTrackId, t:tiso, lon, lat, acc, speed, heading });
+    }, err=>toast('GPSエラー: '+err.message, true), {enableHighAccuracy:true, maximumAge:1000, timeout:10000});
+    toast('GPSロガー開始');
+  }
+
+  function stopGpsLog(){
+    if(watchId){ navigator.geolocation.clearWatch(watchId); watchId=null; }
+    currentTrackId=null; toast('GPSロガー停止');
+  }
+
+  async function showTracks(){
+    const { data: tracks } = await __supa.from('tracks').select('id').eq('room', __room);
+    if(!tracks?.length){ toast('トラックがありません', true); return; }
+    const ids = tracks.map(r=>r.id);
+    const { data: pts } = await __supa.from('track_points')
+      .select('track_id,t,lon,lat').in('track_id', ids).order('t');
+    const by=new Map(); (pts||[]).forEach(p=>{ if(!by.has(p.track_id)) by.set(p.track_id, []); by.get(p.track_id).push([p.lon,p.lat]); });
+    const fc={ type:'FeatureCollection', features:[...by.entries()].map(([id,cs])=>({type:'Feature',properties:{id},geometry:{type:'LineString',coordinates:cs}})) };
+    if(!map.getSource('tracks')) map.addSource('tracks',{type:'geojson',data:fc}); else map.getSource('tracks').setData(fc);
+    if(!map.getLayer('tracks-line')) map.addLayer({id:'tracks-line',type:'line',source:'tracks',paint:{'line-color':'#ef4444','line-width':3}});
+    toast('軌跡を表示しました');
+  }
+
+  // ---- 4) 画面左下に小さな操作パネルを追加（既存UIと干渉しません）
+  function mountPanel(){
+    const div = document.createElement('div');
+    div.className = 'supabox';
+    div.innerHTML = `
+      <h4>共同編集 / GPS</h4>
+      <div class="row" style="margin-bottom:6px">
+        <button onclick="window.__supasave()">図形を保存</button>
+        <button onclick="window.__supaload()">再読込</button>
+      </div>
+      <div class="row" style="margin-bottom:6px">
+        <button onclick="window.__gpstart()">GPS開始</button>
+        <button onclick="window.__gpstop()" class="danger">GPS停止</button>
+        <button onclick="window.__gpshow()">軌跡表示</button>
+      </div>
+      <div class="row">
+        <button onclick="(async()=>{const e=prompt('メールアドレス'); if(!e) return; const r=await __supa.auth.signInWithOtp({ email:e }); alert('メールのリンクを開いて戻ってきてください');})();">
+          メールでログイン
+        </button>
+        <button onclick="__supa.auth.signOut().then(()=>alert('サインアウトしました'))">サインアウト</button>
+      </div>
+    `;
+    document.body.appendChild(div);
+  }
+
+  // ---- 5) 既存の map / draw ができたらフック
+  whenReady(()=>window.map && window.map.on && window.draw && window.draw.add, ()=>{
+    // 地図ロードの後で一回読み込む（既存レイヤはあなたのコードのまま）
+    try { map.on('load', ()=>{ loadFeatures(); }); } catch(_) {}
+    // グローバル関数としてUIから呼べるように公開
+    window.__supaload = loadFeatures;
+    window.__supasave = saveFeatures;
+    window.__gpstart  = startGpsLog;
+    window.__gpstop   = stopGpsLog;
+    window.__gpshow   = showTracks;
+    // パネル設置
+    mountPanel();
+  });
+
+  // ---- 6) ちょっとした通知（失敗時は赤）
+  function toast(msg, bad=false){
+    const el = document.createElement('div');
+    el.textContent = msg;
+    el.style.cssText = 'position:fixed;right:12px;top:12px;padding:10px 12px;border-radius:10px;background:'+
+      (bad?'#fee2e2':'#ecfeff')+';border:1px solid '+(bad?'#fecaca':'#a5f3fc')+';z-index:2000;font:12px/1.2 system-ui;';
+    document.body.appendChild(el);
+    setTimeout(()=>el.remove(), 3200);
+  }
+})();
+</script>
+<!-- ========================== -->
+<!-- SUPABASE 連携（本体：ここまで） -->
+<!-- ========================== -->
+
+<!-- 左下パネルが不要なら、上の mountPanel() 呼び出しをコメントアウトしてください -->
+<!-- ここが </body> の直前になるように貼る -->
 </body>
 </html>
