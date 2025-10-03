@@ -693,11 +693,44 @@ window.addEventListener('DOMContentLoaded', () => {
     }catch(e){ console.error(e); alert('スクショに失敗しました'); }
   };
 
-  /* ===== FGB 読み込み（API不要：Supabase Storage 公開URL 直読み版） ===== */
-async function initDriveFGB(){
-  // ★★★ ここに Supabase Storage の「公開URL」を貼ってください（例は形だけ） ★★★
-  const FGB_URL_EMERGENCY = "https://tdoxxwhkvdguyfrofnaw.supabase.co/storage/v1/object/public/data/Designated%20Emergency%20Evacuation%20Site.fgb";
-  const FGB_URL_SHELTER   = "https://tdoxxwhkvdguyfrofnaw.supabase.co/storage/v1/object/public/data/Designated%20Shelter%20for%20Evacuees.fgb";
+// ---- FlatGeobuf ライブラリを堅牢に読み込む（3段フォールバック）----
+async function loadFgbLib() {
+  // 1) jsDelivr → 2) unpkg（どちらもESM）→ 3) UMDスクリプトを挿入して window.flatgeobuf を使う
+  const tryUrls = [
+    "https://cdn.jsdelivr.net/npm/flatgeobuf@3.27.4/dist/flatgeobuf-geojson.min.js",
+    "https://unpkg.com/flatgeobuf@3.27.4/dist/flatgeobuf-geojson.min.js"
+  ];
+  for (const u of tryUrls) {
+    try {
+      const m = await import(/* @vite-ignore */ u);
+      // ESMのとき
+      if (m && (m.deserialize || (m.default && m.default.deserialize))) {
+        return m.deserialize || m.default.deserialize;
+      }
+    } catch (_) { /* 次へフォールバック */ }
+  }
+  // 最終手段：UMDを<script>で読み込み、window.flatgeobuf を使う
+  await new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = "https://cdn.jsdelivr.net/npm/flatgeobuf@3.27.4/dist/flatgeobuf-geojson.min.js";
+    s.async = true;
+    s.onload = () => res();
+    s.onerror = () => {
+      // jsDelivrがダメなら unpkg も試す
+      const s2 = document.createElement("script");
+      s2.src = "https://unpkg.com/flatgeobuf@3.27.4/dist/flatgeobuf-geojson.min.js";
+      s2.async = true;
+      s2.onload = () => res();
+      s2.onerror = () => rej(new Error("flatgeobufの読み込みに失敗しました（CDN到達不可）"));
+      document.head.appendChild(s2);
+    };
+    document.head.appendChild(s);
+  });
+  if (window.flatgeobuf && window.flatgeobuf.deserialize) {
+    return window.flatgeobuf.deserialize;
+  }
+  throw new Error("flatgeobufの読み込みに失敗しました（deserialize未検出）");
+}
 
   // 列名候補
   const MUNI_COL_CANDIDATES = ["都道府県名及び市町村名","都道府県及び市町村名"];
@@ -734,18 +767,24 @@ async function initDriveFGB(){
   bindPop('emg-circle'); bindPop('shel-circle');
 
   // ---- FlatGeobuf をURLから直読み（APIキー不要）----
-  async function readFGB_fromURL(url){
-    if(!url) throw new Error("FGBのURLが未設定です");
-    // HTMLが返る“エラーページ”を弾くため最初に1バイトだけ読んで Content-Type を確認
-    const head = await fetch(url, { headers:{'Range':'bytes=0-0'}, cache:'no-store' });
-    if(!head.ok) throw new Error(`FGBヘッダ取得失敗 ${head.status} ${head.statusText}`);
-    const ct = (head.headers.get('content-type')||'').toLowerCase();
-    if(ct.includes('text/html')) throw new Error('公開URLがHTMLを返しています（URL/公開設定/パスを確認）');
-    const fgb = await import("https://cdn.jsdelivr.net/npm/flatgeobuf@3.27.4/dist/flatgeobuf-geojson.min.js");
-    const feats=[]; for await (const f of fgb.deserialize(url)) feats.push(f);
-    if(!feats.length) throw new Error('FGBの中身が空です');
-    return feats;
+async function readFGB_fromURL(url){
+  // ヘッダだけ先に確認（HTMLが返ってこないか）
+  const head = await fetch(url, { headers:{ 'Range':'bytes=0-0' }, cache:'no-store' });
+  if(!head.ok) throw new Error(`FGBヘッダ取得失敗 ${head.status} ${head.statusText}`);
+  const ct = (head.headers.get('content-type')||'').toLowerCase();
+  if (ct.includes('text/html')) {
+    throw new Error('FGB直リンクがHTMLを返しています（URL/公開設定/パスを確認）');
   }
+
+  // ★ここを置き換え：堅牢ローダーでライブラリを取得
+  const deserialize = await loadFgbLib();
+
+  // 取り込み
+  const feats = [];
+  for await (const f of deserialize(url)) feats.push(f);
+  if(!feats.length) throw new Error('FGBの中身が空です');
+  return feats;
+}
 
   let cacheEmergency=null, cacheShelter=null;
   const PREFS=["北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県","茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県","新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県","静岡県","愛知県","三重県","滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県","鳥取県","島根県","岡山県","広島県","山口県","徳島県","香川県","愛媛県","高知県","福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"];
