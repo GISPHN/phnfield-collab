@@ -78,7 +78,14 @@
 .tool.active{ outline:2px solid #1e88e5; }
 
 /* --- 右側：オブジェクト一覧（ドラッグ&ドロップ対応） --- */
-#objPanel{ position:absolute; right:12px; top:520px; width:340px; z-index:22; background:rgba(255,255,255,.82); backdrop-filter:blur(6px); border-radius:12px; padding:10px; box-shadow:0 8px 28px rgba(0,0,0,.12); }
+#objPanel{  position: static;  /* ← absolute をやめる */
+  width: auto;
+  background: transparent;
+  backdrop-filter: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+}
 #objList{ max-height:280px; overflow:auto; margin-top:6px; }
 .objItem, .grpItem{
   background:#fff; border-radius:8px; padding:8px; margin:6px 0; box-shadow:0 1px 6px rgba(0,0,0,.08);
@@ -232,8 +239,6 @@ input[type="number"]{ width:70px; }
     <span>塗色</span><input id="uiFillColor" type="color" value="#43a047">
     <span>不透明</span><input id="uiFillOpacity" type="number" value="0.5" min="0" max="1" step="0.05">
   </div>
-
-  <div id="objList"></div>
 </div>
 <!-- ==== /Object List Panel ==== -->
 
@@ -590,10 +595,10 @@ async function readFGB_fromURL(url) {
     // ソース/レイヤ
     if(!map.getSource('emergency')) map.addSource('emergency',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
     if(!map.getSource('shelter'))   map.addSource('shelter',  {type:'geojson',data:{type:'FeatureCollection',features:[]}});
-    if(!map.getLayer('emg-circle')) map.addLayer({id:'emg-circle',type:'circle',source:'emergency',paint:{'circle-radius':5,'circle-color':'#e23b3b','circle-stroke-color':'#fff','circle-stroke-width':1}});
-    if(!map.getLayer('shel-circle')) map.addLayer({id:'shel-circle',type:'circle',source:'shelter',paint:{'circle-radius':5,'circle-color':'#2a7be4','circle-stroke-color':'#fff','circle-stroke-width':1}});
-    if(!map.getLayer('emg-label'))   map.addLayer({id:'emg-label',type:'symbol',source:'emergency',layout:{'text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top'},paint:{'text-halo-width':1.2,'text-halo-color':'#fff'}});
-    if(!map.getLayer('shel-label'))  map.addLayer({id:'shel-label',type:'symbol',source:'shelter',  layout:{'text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top'},paint:{'text-halo-width':1.2,'text-halo-color':'#fff'}});
+    if(!map.getLayer('emg-circle')) map.addLayer({id:'emg-circle',type:'circle',source:'emergency',layout:{ visibility:'none' },paint:{'circle-radius':5,'circle-color':'#e23b3b','circle-stroke-color':'#fff','circle-stroke-width':1}});
+    if(!map.getLayer('shel-circle')) map.addLayer({id:'shel-circle',type:'circle',source:'shelter',layout:{ visibility:'none' },paint:{'circle-radius':5,'circle-color':'#2a7be4','circle-stroke-color':'#fff','circle-stroke-width':1}});
+    if(!map.getLayer('emg-label'))   map.addLayer({id:'emg-label',type:'symbol',source:'emergency',layout:{ visibility:'none' },layout:{'text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top'},paint:{'text-halo-width':1.2,'text-halo-color':'#fff'}});
+    if(!map.getLayer('shel-label'))  map.addLayer({id:'shel-label',type:'symbol',source:'shelter',  layout:{ visibility:'none','text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top'},paint:{'text-halo-width':1.2,'text-halo-color':'#fff'}});
     bindClickPopup('emg-circle'); bindClickPopup('shel-circle');
 
     // UI
@@ -675,18 +680,15 @@ async function readFGB_fromURL(url) {
     const fc=draw.getAll();
     const blob=new Blob([JSON.stringify(fc)],{type:'application/json'});
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='features.geojson'; a.click();
- // 共同編集 / GPS パネルのトグル
+// 共同編集 / GPS パネルのトグル（← btnExportの外に置く）
 $('btnToggleEdit').onclick = ()=>{
   const box = document.querySelector('.supabox');
   box.style.display = (box.style.display==='none'||!box.style.display) ? 'block' : 'none';
 };
 $('btnToggleGPS').onclick = ()=>{
   const box = document.querySelector('.supabox');
-  box.style.display = 'block'; // GPSは同じ箱内のため、とりあえず表示
-  // 必要ならGPSボタン群だけを強調表示するなどのUIも追記可能
+  box.style.display = 'block';
 };
-
-  };
 
   /*************** Supabase：図形保存/読込 + GPS ***************/
   (function whenReady(){
@@ -787,48 +789,11 @@ if (!map.getSource('gsi-photo')) {
     }catch(e){
       console.error(e); showErr('初期化エラー: '+e.message);
     }
-    /* ==== basemap & controls ==== */
-// 陰影起伏図（いちばん下）
-if (!map.getSource('hillshade')) {
-  map.addSource('hillshade', {
-    type:'raster',
-    tiles:['https://cyberjapandata.gsi.go.jp/xyz/hillshademap/{z}/{x}/{y}.png'],
-    tileSize:256,
-    attribution:'<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">GSI</a>'
-  });
-  const first = map.getStyle().layers[0]?.id;
-  map.addLayer({ id:'hillshade', type:'raster', source:'hillshade', paint:{ 'raster-opacity':0.55 } }, first);
-}
-// 地理院 標準/写真（少し透明）
-if (!map.getSource('gsi-std')) {
-  map.addSource('gsi-std', { type:'raster', tiles:['https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png'], tileSize:256 });
-  map.addLayer({ id:'gsi-std', type:'raster', source:'gsi-std', layout:{ visibility:'none' }, paint:{ 'raster-opacity':0.85 } });
-}
-if (!map.getSource('gsi-photo')) {
-  map.addSource('gsi-photo', { type:'raster', tiles:['https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg'], tileSize:256 });
-  map.addLayer({ id:'gsi-photo', type:'raster', source:'gsi-photo', layout:{ visibility:'none' }, paint:{ 'raster-opacity':0.85 } });
-}
-// 切替用ヘルパ
-window.switchBase = (name)=>{
-  ['gsi-std','gsi-photo'].forEach(id=>{ if(map.getLayer(id)) map.setLayoutProperty(id,'visibility','none'); });
-  if (name==='std'   && map.getLayer('gsi-std'))   map.setLayoutProperty('gsi-std','visibility','visible');
-  if (name==='photo' && map.getLayer('gsi-photo')) map.setLayoutProperty('gsi-photo','visibility','visible');
-};
-// 縮尺＆現在地（パルス）
-map.addControl(new maplibregl.ScaleControl({ maxWidth:130, unit:'metric' }), 'bottom-left');
-const geo = new maplibregl.GeolocateControl({ positionOptions:{ enableHighAccuracy:true }, trackUserLocation:true, showUserHeading:true });
-map.addControl(geo, 'bottom-left');
-let pulseMarker=null;
-geo.on('geolocate', (e)=>{
-  const { longitude, latitude } = e.coords;
-  if (!pulseMarker){
-    const el=document.createElement('div'); el.className='pulse';
-    pulseMarker=new maplibregl.Marker({ element:el, anchor:'center' }).setLngLat([longitude, latitude]).addTo(map);
-  }else{ pulseMarker.setLngLat([longitude, latitude]); }
-});
+
 /* ==== /basemap & controls ==== */
 /* ==== user objects layers ==== */
-const userFC = { type:'FeatureCollection', features:[] };
+// ユーザー図形（グローバル）
+window.userFC = { type:'FeatureCollection', features:[] };
 if (!map.getSource('user-src')){
   map.addSource('user-src', { type:'geojson', data:userFC });
 
@@ -872,7 +837,7 @@ if (!map.getSource('user-src')){
 /* ==== object tools & list ==== */
 let addMode=null, tempCoords=[], circleCenter=null;
 const setTemp = fc => map.getSource('user-temp').setData(fc || {type:'FeatureCollection',features:[]});
-const pushFeature = f => { userFC.features.push(f); map.getSource('user-src').setData(userFC); refreshObjList(); };
+const pushFeature = f => { userFC.features.push(f); map.getSource('user-src').setData(window.userFC); refreshObjList(); };
 
 // オブジェクト：メインボタン → サブツール開閉
 document.getElementById('btnObj').addEventListener('click', ()=>{
@@ -955,7 +920,7 @@ const objList=document.getElementById('objList');
 const scopeRadios=[...document.querySelectorAll('input[name="styleScope"]')];
 function getId(f){ return f.id || (f.id=Math.random().toString(36).slice(2)); }
 function findFeatureById(fid){ return userFC.features.find(f=>getId(f)===fid); }
-function removeFeature(f){ const i=userFC.features.indexOf(f); if(i>-1){ userFC.features.splice(i,1); map.getSource('user-src').setData(userFC); refreshObjList(); } }
+function removeFeature(f){ const i=userFC.features.indexOf(f); if(i>-1){ userFC.features.splice(i,1); map.getSource('user-src').setData(window.userFC); refreshObjList(); } }
 
 function refreshObjList(){
   objList.innerHTML='';
@@ -973,7 +938,7 @@ function makeObjItem(f){
   const el=document.createElement('div'); el.className='objItem'; el.draggable=true; el.dataset.fid=getId(f);
   const typ=f.properties._type, icon=document.createElement('div'); icon.className='objType type-'+typ;
   const label=document.createElement('input'); label.type='text'; label.value=f.properties.label||''; label.placeholder='ラベル';
-  label.addEventListener('change',()=>{ f.properties.label=label.value; map.getSource('user-src').setData(userFC); });
+  label.addEventListener('change',()=>{ f.properties.label=label.value; map.getSource('user-src').setData(window.userFC); });
   const del=document.createElement('button'); del.textContent='削除'; del.onclick=()=>removeFeature(f);
   el.append(icon,label,del); addDnD(el,'feature'); return el;
 }
@@ -993,7 +958,7 @@ function addDnD(el,kind){
     }else if(dragData.kind==='group' && kind==='group'){
       const from=dragData.gid, to=el.dataset.gid; userFC.features.forEach(f=>{ if(f.properties._group===from) f.properties._group=to; });
     }
-    map.getSource('user-src').setData(userFC); refreshObjList();
+    map.getSource('user-src').setData(window.userFC); refreshObjList();
   });
 }
 
@@ -1018,7 +983,7 @@ function applyStyleFromUI(){
   if(scope==='all'){ userFC.features.forEach(applyTo); }
   else if(scope==='group'&&current?.properties._group){ const gid=current.properties._group; userFC.features.filter(f=>f.properties._group===gid).forEach(applyTo); }
   else if(scope==='single'&&current){ applyTo(current); }
-  map.getSource('user-src').setData(userFC);
+  map.getSource('user-src').setData(window.userFC);
 }
 // 初期描画
 refreshObjList();
