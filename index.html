@@ -173,7 +173,7 @@
   <script src="https://unpkg.com/@mapbox/mapbox-gl-draw@1.5.0/dist/mapbox-gl-draw.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/yjs@13.6.8/dist/yjs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/y-webrtc@10.3.5/dist/y-webrtc.min.js"></script>
-  <script src="https://esm.sh/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
 
   <script>
@@ -181,8 +181,21 @@
   const SUPABASE_URL  = 'https://tdoxxwhkvdguyfrofnaw.supabase.co';   // ←置換
   const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRkb3h4d2hrdmRndXlmcm9mbmF3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk0MTQ0NDQsImV4cCI6MjA3NDk5MDQ0NH0.h2ZnTGr0jml2V7SUvEaOSzjNXxKvCJuJryFEyEkrQQc;                // ←置換
 
-  // Supabase クライアント
-  window.__supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  // Supabase クライアント（UMD で window.supabase が生える前提）
+  try {
+    if (!window.supabase) throw new Error('Supabase SDK (UMD) が読み込まれていません');
+    window.__supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  } catch (e) {
+    console.error(e);
+    // 共同編集/GPS系が使えないときでも地図は動かすためのダミー
+    window.__supa = {
+      from(){ return { select:async()=>({}), insert:async()=>({}), in:async()=>({}), eq:async()=>({}), order:async()=>({}), single:async()=>({}) }; },
+      auth:{ signInWithOtp:async()=>({}), signOut:async()=>({}) }
+    };
+    // 失敗は画面にも出す
+    setTimeout(()=>{ const b=document.createElement('div'); b.className='toast bad'; b.textContent='Supabase の初期化に失敗（共同編集/GPSは無効ですが地図は動きます）'; document.body.appendChild(b); setTimeout(()=>b.remove(), 5000); }, 1000);
+  }
+  // ▲▲▲ ここまで置換
   window.__room = new URLSearchParams(location.hash.slice(1)).get('r') || 'default';
 
   // ユーティリティ
