@@ -307,42 +307,64 @@
   const FGB_URL_EMERGENCY='https://tdoxxwhkvdguyfrofnaw.supabase.co/storage/v1/object/public/data/Designated%20Emergency%20Evacuation%20Site.fgb'; // ←置換（先頭 e）
   const FGB_URL_SHELTER  ='https://tdoxxwhkvdguyfrofnaw.supabase.co/storage/v1/object/public/data/Designated%20Shelter%20for%20Evacuees.fgb';     // ←置換
 
-  // FlatGeobuf ローダ（jsDelivr → unpkg → UMDフォールバック）
-  async function loadFgbLib(){
-    const urls=[
-      "https://cdn.jsdelivr.net/npm/flatgeobuf@3.27.4/dist/flatgeobuf-geojson.min.js",
-      "https://unpkg.com/flatgeobuf@3.27.4/dist/flatgeobuf-geojson.min.js"
-    ];
-    for(const u of urls){
-      try{
-        const m=await import(/* @vite-ignore */ u);
-        if(m&&(m.deserialize||(m.default&&m.default.deserialize))){
-          return m.deserialize||m.default.deserialize;
-        }
-      }catch(_){}
+// 自己ホストした flatgeobuf を “必ず最初に” 読みにいく
+const LOCAL_FGB_LIB = './flatgeobuf-geojson.min.js';
+
+/**
+ * flatgeobuf の GeoJSON デシリアライザ（deserialize）を確実に読み込む。
+ * 1) 自己ホスト（LOCAL_FGB_LIB）
+ * 2) jsDelivr
+ * 3) unpkg
+ * それでもダメならエラー。
+ */
+async function loadFgbLib() {
+  if (window.flatgeobuf?.deserialize) return window.flatgeobuf.deserialize;
+
+  const candidates = [
+    LOCAL_FGB_LIB,
+    'https://cdn.jsdelivr.net/npm/flatgeobuf@3.27.4/dist/flatgeobuf-geojson.min.js',
+    'https://unpkg.com/flatgeobuf@3.27.4/dist/flatgeobuf-geojson.min.js'
+  ];
+
+  for (const url of candidates) {
+    try {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = url;
+        s.async = true;
+        s.onload = resolve;
+        s.onerror = () => reject(new Error('failed: ' + url));
+        document.head.appendChild(s);
+      });
+      if (window.flatgeobuf?.deserialize) {
+        return window.flatgeobuf.deserialize;
+      }
+    } catch (e) {
+      console.warn('[flatgeobuf] load failed ->', e.message);
     }
-    await new Promise((res,rej)=>{
-      const s=document.createElement('script');
-      s.src=urls[0]; s.onload=res; s.onerror=()=>{
-        const s2=document.createElement('script');
-        s2.src=urls[1]; s2.onload=res; s2.onerror=()=>rej(new Error('flatgeobufの読み込みに失敗（CDN到達不可）'));
-        document.head.appendChild(s2);
-      };
-      document.head.appendChild(s);
-    });
-    if(window.flatgeobuf?.deserialize) return window.flatgeobuf.deserialize;
-    throw new Error('flatgeobufの読み込みに失敗（deserialize未検出）');
   }
-  async function readFGB_fromURL(url){
-    const head=await fetch(url,{headers:{'Range':'bytes=0-0'},cache:'no-store'});
-    if(!head.ok) throw new Error(`FGBヘッダ取得失敗 ${head.status} ${head.statusText}`);
-    const ct=(head.headers.get('content-type')||'').toLowerCase();
-    if(ct.includes('text/html')) throw new Error('FGB直リンクがHTMLを返しています（URL/公開設定/パスを確認）');
-    const deserialize=await loadFgbLib();
-    const feats=[]; for await(const f of deserialize(url)) feats.push(f);
-    if(!feats.length) throw new Error('FGBの中身が空です');
-    return feats;
+  throw new Error('flatgeobufの読み込みに失敗（自己ホスト/CDNとも不可）');
+}
+
+/**
+ * FGB を URL から読み、GeoJSON Feature[] を返す。
+ * - 先頭1バイト Range 取得で HTML誤配信を検知
+ * - loadFgbLib() を通して自己ホスト/フォールバックでライブラリを確実にロード
+ */
+async function readFGB_fromURL(url) {
+  const head = await fetch(url, { headers: { 'Range': 'bytes=0-0' }, cache: 'no-store' });
+  if (!head.ok) throw new Error(`FGBヘッダ取得失敗 ${head.status} ${head.statusText}`);
+  const ct = (head.headers.get('content-type') || '').toLowerCase();
+  if (ct.includes('text/html')) {
+    throw new Error('FGB直リンクがHTMLを返しています（URL/公開設定/パスを確認）');
   }
+
+  const deserialize = await loadFgbLib();  // ←ここで自己ホスト/フォールバックを確実化
+  const feats = [];
+  for await (const f of deserialize(url)) feats.push(f);
+  if (!feats.length) throw new Error('FGBの中身が空です');
+  return feats;
+}
 
   // クリックで属性ポップアップ
   function bindClickPopup(layerId){
