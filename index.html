@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>PHN Field Collab + FGBビューア（統合パネル・機能美UI 完全版 / Drive API対応）</title>
+<title>PHN Field Collab</title>
 
 <!-- MapLibre -->
 <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet"/>
@@ -332,8 +332,6 @@ window.addEventListener('DOMContentLoaded', () => {
   const showErr = (m)=>{ const e=$('err'); e.textContent=m; e.style.display='block'; console.error(m); setTimeout(()=>e.style.display='none',10000); };
   window.addEventListener('error', (ev)=>{ const msg = ev?.error?.message || ev?.message || 'Script error.'; showErr('JSエラー: '+msg); });
 
-  /* ==== あなたの Drive API キーを設定 ==== */
-  const DRIVE_API_KEY = "AIzaSyD7u9gia-L2D-mhwYHG6gPaB_NJS-S7Cyw"; // ←必ず差し替えてください
 
   if (typeof maplibregl === 'undefined') { showErr('MapLibreが読み込まれていません'); return; }
 
@@ -695,31 +693,210 @@ window.addEventListener('DOMContentLoaded', () => {
     }catch(e){ console.error(e); alert('スクショに失敗しました'); }
   };
 
-  /* ===== Drive / FGB 読み込み（Drive API v3：alt=media & key） ===== */
-  async function initDriveFGB(){
-    const FILE_ID_EMERGENCY = "1Shon9KvxIHHA3Si4QF99sG7i0BR3VBh0"; // 指定緊急避難場所
-    const FILE_ID_SHELTER   = "10R9hFMPSliGgmMlEdekv96d8yTPhTpQH"; // 指定避難所
+  /* ===== FGB 読み込み（API不要：Supabase Storage 公開URL 直読み版） ===== */
+async function initDriveFGB(){
+  // ★★★ ここに Supabase Storage の「公開URL」を貼ってください（例は形だけ） ★★★
+  const FGB_URL_EMERGENCY = "https://YOUR-PROJECT.supabase.co/storage/v1/object/public/data/esignated_Emergency_Evacuation_Site_20250926.fgb";
+  const FGB_URL_SHELTER   = "https://YOUR-PROJECT.supabase.co/storage/v1/object/public/data/Designated_Shelter_for_Evacuees_20250926.fgb";
 
-    const MUNI_COL_CANDIDATES = ["都道府県名及び市町村名","都道府県及び市町村名"];
-    const LABEL_CANDIDATES = ["施設・場所名","住所","共通ID","NO"];
+  // 列名候補
+  const MUNI_COL_CANDIDATES = ["都道府県名及び市町村名","都道府県及び市町村名"];
+  const LABEL_CANDIDATES    = ["施設・場所名","住所","共通ID","NO"];
 
-    // Drive API v3 endpoint（CORS可）
-    const driveApiUrl = (id)=>`https://www.googleapis.com/drive/v3/files/${id}?alt=media&key=${encodeURIComponent(DRIVE_API_KEY)}`;
+  // Mapソース/レイヤ（存在しなければ作る）
+  if(!map.getSource('emergency')) map.addSource('emergency',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+  if(!map.getSource('shelter'))   map.addSource('shelter',  {type:'geojson',data:{type:'FeatureCollection',features:[]}});
+  if(!map.getLayer('emg-circle')) map.addLayer({id:'emg-circle',type:'circle',source:'emergency',paint:{'circle-radius':5,'circle-color':'#e23b3b','circle-stroke-color':'#fff','circle-stroke-width':1}});
+  if(!map.getLayer('shel-circle')) map.addLayer({id:'shel-circle',type:'circle',source:'shelter',paint:{'circle-radius':5,'circle-color':'#2a7be4','circle-stroke-color':'#fff','circle-stroke-width':1}});
 
-    // Mapソース/レイヤ
-    if(!map.getSource('emergency')) map.addSource('emergency',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
-    if(!map.getSource('shelter'))   map.addSource('shelter',  {type:'geojson',data:{type:'FeatureCollection',features:[]}});
-    if(!map.getLayer('emg-circle')) map.addLayer({id:'emg-circle',type:'circle',source:'emergency',paint:{'circle-radius':5,'circle-color':'#e23b3b','circle-stroke-color':'#fff','circle-stroke-width':1}});
-    if(!map.getLayer('shel-circle')) map.addLayer({id:'shel-circle',type:'circle',source:'shelter',paint:{'circle-radius':5,'circle-color':'#2a7be4','circle-stroke-color':'#fff','circle-stroke-width':1}});
+  // ラベル（glyphs が設定されていれば追加）
+  const hasGlyphs = !!(map && map.style && map.style.stylesheet && map.style.stylesheet.glyphs);
+  if (hasGlyphs && !map.getLayer('emg-label')) {
+    map.addLayer({id:'emg-label',type:'symbol',source:'emergency',
+      layout:{'text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top'},
+      paint:{'text-halo-width':1.2,'text-halo-color':'#fff'}});
+  }
+  if (hasGlyphs && !map.getLayer('shel-label')) {
+    map.addLayer({id:'shel-label',type:'symbol',source:'shelter',
+      layout:{'text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top'},
+      paint:{'text-halo-width':1.2,'text-halo-color':'#fff'}});
+  }
 
-    // ラベルは glyphs がある時だけ
-    const hasGlyphs = !!(map && map.style && map.style.stylesheet && map.style.stylesheet.glyphs);
-    if (hasGlyphs && !map.getLayer('emg-label')) {
-      map.addLayer({id:'emg-label',type:'symbol',source:'emergency',layout:{'text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top'},paint:{'text-halo-width':1.2,'text-halo-color':'#fff'}});
+  // クリックで属性をポップアップ
+  const escapeHtml=(s)=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function bindPop(layerId){
+    map.on('click', layerId, (e)=>{
+      const f=e.features[0]; const props=f.properties||{};
+      const html=Object.keys(props).filter(k=>k!=="__label__").map(k=>`<div class="small"><strong>${escapeHtml(k)}</strong><br>${escapeHtml(String(props[k]))}</div>`).join("<hr style='border:none;border-top:1px solid #eee;margin:6px 0'>");
+      new maplibregl.Popup({closeButton:true,offset:12}).setLngLat(e.lngLat).setHTML(html).addTo(map);
+    });
+  }
+  bindPop('emg-circle'); bindPop('shel-circle');
+
+  // ---- FlatGeobuf をURLから直読み（APIキー不要）----
+  async function readFGB_fromURL(url){
+    if(!url) throw new Error("FGBのURLが未設定です");
+    // HTMLが返る“エラーページ”を弾くため最初に1バイトだけ読んで Content-Type を確認
+    const head = await fetch(url, { headers:{'Range':'bytes=0-0'}, cache:'no-store' });
+    if(!head.ok) throw new Error(`FGBヘッダ取得失敗 ${head.status} ${head.statusText}`);
+    const ct = (head.headers.get('content-type')||'').toLowerCase();
+    if(ct.includes('text/html')) throw new Error('公開URLがHTMLを返しています（URL/公開設定/パスを確認）');
+    const fgb = await import("https://cdn.jsdelivr.net/npm/flatgeobuf@3.27.4/dist/flatgeobuf-geojson.min.js");
+    const feats=[]; for await (const f of fgb.deserialize(url)) feats.push(f);
+    if(!feats.length) throw new Error('FGBの中身が空です');
+    return feats;
+  }
+
+  let cacheEmergency=null, cacheShelter=null;
+  const PREFS=["北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県","茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県","新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県","静岡県","愛知県","三重県","滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県","鳥取県","島根県","岡山県","広島県","山口県","徳島県","香川県","愛媛県","高知県","福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"];
+  const $ = (id)=>document.getElementById(id);
+  const prefSelect=$('prefSelect'), muniSelect=$('muniSelect'), labelFieldSelect=$('labelFieldSelect');
+  const qBox=$('qMuni'), suggest=$('suggest');
+  const showErr = (m)=>{ const e=$('err'); e.textContent=m; e.style.display='block'; console.error(m); setTimeout(()=>e.style.display='none',10000); };
+
+  try{
+    // ここで実データを読み込み
+    const [emgFeats, shelFeats] = await Promise.all([
+      readFGB_fromURL(FGB_URL_EMERGENCY),
+      readFGB_fromURL(FGB_URL_SHELTER)
+    ]);
+    cacheEmergency = emgFeats; cacheShelter = shelFeats;
+
+    // 列名の推定
+    const propKeys = new Set([...Object.keys(emgFeats[0]?.properties||{}), ...Object.keys(shelFeats[0]?.properties||{})]);
+    const COL_MUNI = MUNI_COL_CANDIDATES.find(k=>propKeys.has(k));
+    if(!COL_MUNI){ showErr('「都道府県名及び市町村名」列が見つかりません'); }
+
+    // ラベル候補（候補が無ければ全カラム）
+    const labels = LABEL_CANDIDATES.filter(k=>propKeys.has(k)); (labels.length?labels:Array.from(propKeys))
+      .forEach(k=>{ const o=document.createElement('option'); o.value=k; o.textContent=k; labelFieldSelect.appendChild(o); });
+    if(labelFieldSelect.options.length) labelFieldSelect.value = labelFieldSelect.options[0].value;
+
+    // 都道府県・市区町村の候補生成
+    PREFS.forEach(p=>{ const o=document.createElement('option'); o.value=p; o.textContent=p; prefSelect.appendChild(o); });
+    document.querySelectorAll('input[name="areaMode"]').forEach(r=>{
+      r.addEventListener('change', ()=>{
+        const v = document.querySelector('input[name="areaMode"]:checked').value;
+        $('prefRow').style.display = (v==='pref'||v==='muni') ? '' : 'none';
+        $('muniRow').style.display = (v==='muni') ? '' : 'none';
+      });
+    });
+
+    const uniq=(a)=>[...new Set(a)];
+    const names = uniq([...emgFeats, ...shelFeats].map(f=>String(f.properties?.[COL_MUNI]||"").trim()).filter(Boolean));
+    function splitPrefCity(full){ const pref=PREFS.find(p=>full.startsWith(p))||""; return {pref, city: full.slice(pref.length).trim()||full}; }
+    const allMunicipalLabels = names.map(n=>{ const {pref, city}=splitPrefCity(n); return pref ? `${pref} ${city||"(名称不明)"}` : n; })
+                                    .sort((a,b)=>a.localeCompare(b,'ja'));
+
+    function renderMuniOptions(){
+      const chosenPrefs = new Set(Array.from(prefSelect.selectedOptions).map(o=>o.value));
+      muniSelect.innerHTML = "";
+      const list = (chosenPrefs.size===0) ? allMunicipalLabels : allMunicipalLabels.filter(lbl=>chosenPrefs.has(lbl.split(" ")[0]));
+      list.forEach(lbl=>{ const o=document.createElement('option'); o.value=lbl; o.textContent=lbl; muniSelect.appendChild(o); });
+      updateSuggest(qBox.value);
     }
-    if (hasGlyphs && !map.getLayer('shel-label')) {
-      map.addLayer({id:'shel-label',type:'symbol',source:'shelter',layout:{'text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top'},paint:{'text-halo-width':1.2,'text-halo-color':'#fff'}});
+    prefSelect.addEventListener('change', renderMuniOptions);
+    renderMuniOptions();
+
+    function addSelectionByQuery(q){
+      const tokens = String(q||'').split(/[、,]/).map(s=>s.trim()).filter(Boolean);
+      if(!tokens.length) return;
+      const currentPrefs = new Set(Array.from(prefSelect.selectedOptions).map(o=>o.value));
+      tokens.forEach(t=>{ PREFS.forEach(p=>{ if(p.includes(t)) currentPrefs.add(p); }); });
+      Array.from(prefSelect.options).forEach(o=> o.selected = currentPrefs.has(o.value));
+      renderMuniOptions();
+      const currentMunis = new Set(Array.from(muniSelect.selectedOptions).map(o=>o.value));
+      Array.from(muniSelect.options).forEach(o=>{ if(tokens.some(t=>o.text.includes(t))) currentMunis.add(o.value); });
+      Array.from(muniSelect.options).forEach(o=> o.selected = currentMunis.has(o.value));
+      refresh();
     }
+    qBox.addEventListener('keydown', (ev)=>{ if(ev.key==='Enter'){ addSelectionByQuery(qBox.value); qBox.select(); hideSuggest(); } });
+
+    function updateSuggest(query){
+      const q = String(query||'').trim();
+      const chosenPrefs = new Set(Array.from(prefSelect.selectedOptions).map(o=>o.value));
+      const src = (chosenPrefs.size===0) ? allMunicipalLabels : allMunicipalLabels.filter(lbl=>chosenPrefs.has(lbl.split(" ")[0]));
+      if(!q){ hideSuggest(); return; }
+      const hits = src.filter(lbl=>lbl.includes(q)).slice(0,10);
+      if(hits.length===0){ hideSuggest(); return; }
+      suggest.innerHTML = hits.map(h=>`<div class="suggest-item" data-v="${h}">${h}</div>`).join("");
+      suggest.style.display='block';
+      Array.from(suggest.children).forEach(div=>{
+        div.addEventListener('click', ()=>{
+          const val = div.getAttribute('data-v');
+          const opt = Array.from(muniSelect.options).find(o=>o.value===val);
+          if(opt){ opt.selected=true; refresh(); }
+          qBox.value=''; hideSuggest();
+        });
+      });
+    }
+    function hideSuggest(){ suggest.style.display='none'; suggest.innerHTML=''; }
+    qBox.addEventListener('input', ()=> updateSuggest(qBox.value));
+    qBox.addEventListener('blur', ()=> setTimeout(hideSuggest, 150));
+
+    function applyVisibility(){
+      map.setLayoutProperty('emg-circle','visibility', $('chkEmergency').checked ? 'visible':'none');
+      map.setLayoutProperty('shel-circle','visibility', $('chkShelter').checked ? 'visible':'none');
+      const vis = $('chkLabel').checked ? 'visible':'none';
+      if (map.getLayer('emg-label')) map.setLayoutProperty('emg-label','visibility', vis);
+      if (map.getLayer('shel-label')) map.setLayoutProperty('shel-label','visibility', vis);
+    }
+    ['chkEmergency','chkShelter','chkLabel'].forEach(id=>$(id).addEventListener('change', applyVisibility));
+    $('btnApply').addEventListener('click', refresh);
+
+    function fitToData(){
+      const fc1 = map.getSource('emergency')._data;
+      const fc2 = map.getSource('shelter')._data;
+      const all=[...fc1.features, ...fc2.features];
+      if(!all.length) return;
+      let minX=180,minY=90,maxX=-180,maxY=90*-1;
+      all.forEach(f=>{ if(f.geometry.type!=='Point') return; const [x,y]=f.geometry.coordinates;
+        if(x<minX)minX=x; if(y<minY)minY=y; if(x>maxX)maxX=x; if(y>maxY)maxY=y; });
+      if(minX<maxX && minY<maxY) map.fitBounds([[minX,minY],[maxX,maxY]],{padding:40,maxZoom:13});
+    }
+
+    function refresh(){
+      const mode = document.querySelector('input[name="areaMode"]:checked').value;
+      const prefs = new Set(Array.from(prefSelect.selectedOptions).map(o=>o.value));
+      const munis = new Set(Array.from(muniSelect.selectedOptions).map(o=>o.value));
+      const labelField = labelFieldSelect.value;
+
+      const filterByArea = (fullName)=>{
+        if (!fullName) return mode==='all';
+        const pref = PREFS.find(p=>fullName.startsWith(p)) || "";
+        const city = fullName.slice(pref.length).trim();
+        if (mode==='all') return true;
+        if (mode==='pref') return prefs.size===0 ? true : prefs.has(pref);
+        if (mode==='muni'){
+          if (munis.size===0 && prefs.size===0) return true;
+          if (munis.size>0) return munis.has(`${pref} ${city}`);
+          return prefs.has(pref);
+        }
+        return true;
+      };
+
+      const decorate = (f)=>{
+        const p=f.properties||{};
+        const label = (p[labelField] ?? p["施設・場所名"] ?? p["住所"] ?? p["共通ID"] ?? p["NO"] ?? "");
+        return {...f, properties:{...p, __label__: String(label)}};
+      };
+
+      const emgFiltered = (cacheEmergency||[]).filter(f=>filterByArea(String(f.properties?.["都道府県名及び市町村名"]||f.properties?.["都道府県及び市町村名"]||""))).map(decorate);
+      const shlFiltered = (cacheShelter  ||[]).filter(f=>filterByArea(String(f.properties?.["都道府県名及び市町村名"]||f.properties?.["都道府県及び市町村名"]||""))).map(decorate);
+
+      map.getSource('emergency').setData({type:'FeatureCollection', features:emgFiltered});
+      map.getSource('shelter').setData({type:'FeatureCollection', features:shlFiltered});
+
+      applyVisibility(); fitToData();
+    }
+
+    refresh();
+
+  }catch(e){
+    showErr('FGBデータの読み込みに失敗：' + e.message);
+  }
+}
+
 
     // ポップアップ
     const escapeHtml=(s)=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
