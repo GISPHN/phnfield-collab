@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>PHN Field Collab（OSM/GSI・ハザード・FGB・描画・共同編集・GPS）</title>
+  <title>PHN Field Collab</title>
 
   <!-- MapLibre + Draw CSS -->
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css"/>
@@ -32,8 +32,15 @@
     .panel .btn:disabled{opacity:.55;cursor:not-allowed}
 
     /* 右パネル（半透明） */
-    .rightpane{position:absolute;right:12px;top:56px;width:300px;max-height:calc(100% - 68px);padding:10px;border-radius:12px;background:rgba(255,255,255,.88);backdrop-filter:blur(6px);box-shadow:0 8px 28px rgba(0,0,0,.12);overflow:auto;z-index:20}
-    .rightpane h4{margin:0 0 6px;font-size:14px}
+.rightpane{
+  position:absolute; right:12px; top:56px;
+  width:320px; max-height:calc(100% - 68px);
+  padding:12px; border-radius:12px;
+  background:rgba(255,255,255,.86); backdrop-filter:blur(6px);
+  box-shadow:0 8px 28px rgba(0,0,0,.12); overflow:auto; z-index:20;
+}
+.rightpane h4{ margin:0 0 8px; font-size:16px; }
+
 
     /* 左下：Supabase 操作 */
     .supabox{position:absolute;left:12px;bottom:12px;z-index:20;min-width:260px;padding:10px;border-radius:12px;background:rgba(255,255,255,.88);backdrop-filter:blur(6px);box-shadow:0 8px 28px rgba(0,0,0,.12)}
@@ -102,6 +109,8 @@ input[type="number"]{ width:70px; }
   70%{ box-shadow:0 0 0 18px rgba(33,150,243,0); }
   100%{ box-shadow:0 0 0 0 rgba(33,150,243,0); }
 }
+/* 自治体候補の前面化 */
+.suggest{ position:absolute; z-index:9999; }
 
   </style>
 </head>
@@ -123,6 +132,9 @@ input[type="number"]{ width:70px; }
     <div class="chip btn secondary" id="btnShareEdit">編集リンク</div>
     <div class="chip btn secondary" id="btnShareView">閲覧リンク</div>
     <div class="chip btn secondary" id="btnExport">描画をGeoJSON出力</div>
+    <div class="chip btn secondary" id="btnToggleEdit">共同編集</div>
+    <div class="chip btn secondary" id="btnToggleGPS">GPS</div>
+
     <!-- オブジェクト追加：メインボタン＋サブツール -->
 <div id="objToolbar">
   <div id="btnObj" class="chip btn secondary">オブジェクト</div>
@@ -157,9 +169,9 @@ input[type="number"]{ width:70px; }
 
     <div class="group">
       <div>避難施設（FGB）:</div>
-      <label><input type="checkbox" id="chkEmergency" checked> 指定<strong>緊急避難場所</strong>（赤）</label>
-      <label><input type="checkbox" id="chkShelter" checked> 指定<strong>避難所</strong>（青）</label><br>
-      <label><input type="checkbox" id="chkLabel" checked> ラベルを表示</label>
+      <label><input type="checkbox" id="chkEmergency"> 指定<strong>緊急避難場所</strong>（赤）</label>
+      <label><input type="checkbox" id="chkShelter"> 指定<strong>避難所</strong>（青）</label><br>
+      <label><input type="checkbox" id="chkLabel"> ラベルを表示</label>
     </div>
 
     <div class="group">
@@ -198,18 +210,16 @@ input[type="number"]{ width:70px; }
 
   <!-- 右パネル -->
   <div class="rightpane">
-    <h4>レイヤ一覧 / 操作</h4>
-    <div style="font-size:12px;color:#6b7280">必要に応じて追加してください</div>
-  </div>
-  <!-- ==== Object List Panel ==== -->
-<div id="objPanel" class="panel">
-  <div class="inline small">
+<div id="objPanel">
+  <div class="inline small" style="margin-bottom:6px">
     <strong>オブジェクト一覧</strong>
     <span style="margin-left:auto"></span>
     <label><input type="radio" name="styleScope" value="single" checked> 個別</label>
     <label><input type="radio" name="styleScope" value="group"> グループ</label>
     <label><input type="radio" name="styleScope" value="all"> 全体</label>
   </div>
+  <div id="objList"></div>
+</div>
 
   <div class="inline small" style="margin-top:6px">
     <span>ラベル</span><input id="uiLabel" type="text" placeholder="ラベル">
@@ -229,7 +239,7 @@ input[type="number"]{ width:70px; }
 
 
   <!-- 左下：Supabase 操作 -->
-  <div class="supabox">
+  <div class="supabox" style="display:none">
     <h4>共同編集 / GPS</h4>
     <div class="row">
       <button class="wfull" onclick="window.__supaload()">図形を再読込</button>
@@ -299,13 +309,31 @@ input[type="number"]{ width:70px; }
     style:{ version:8, sources:{ base: BASE_SOURCES.osm }, layers:[{id:'base',type:'raster',source:'base'}] },
     center:[139.767,35.681], zoom:5.2
   });
+// 縮尺バー
+map.addControl(new maplibregl.ScaleControl({maxWidth:140, unit:'metric'}), 'bottom-left');
 
-  $('basemapSel').addEventListener('change', ()=>{
-    const key=$('basemapSel').value;
-    map.removeLayer('base'); map.removeSource('base');
-    map.addSource('base', BASE_SOURCES[key]);
-    map.addLayer({id:'base',type:'raster',source:'base'});
-  });
+// 現在地（MapLibre 組み込み）
+const geolocate = new maplibregl.GeolocateControl({
+  positionOptions: { enableHighAccuracy: true },
+  trackUserLocation: true,
+  showUserLocation: true
+});
+map.addControl(geolocate, 'top-left');
+
+$('basemapSel').addEventListener('change', ()=>{
+  const key = $('basemapSel').value;
+  // 既存のbaseを外す
+  if (map.getLayer('base')) map.removeLayer('base');
+  if (map.getSource('base')) map.removeSource('base');
+
+  // 新しいsourceを追加
+  map.addSource('base', BASE_SOURCES[key]);
+
+  // いちばん下に差し込む（ほかのレイヤを覆わない）
+  const first = map.getStyle().layers[0]?.id;
+  map.addLayer({ id:'base', type:'raster', source:'base' }, first);
+});
+
 
   /*************** Draw（ポイント/ライン/ポリゴン + 円ツール） ***************/
   const draw = new MapboxDraw({
@@ -647,6 +675,17 @@ async function readFGB_fromURL(url) {
     const fc=draw.getAll();
     const blob=new Blob([JSON.stringify(fc)],{type:'application/json'});
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='features.geojson'; a.click();
+ // 共同編集 / GPS パネルのトグル
+$('btnToggleEdit').onclick = ()=>{
+  const box = document.querySelector('.supabox');
+  box.style.display = (box.style.display==='none'||!box.style.display) ? 'block' : 'none';
+};
+$('btnToggleGPS').onclick = ()=>{
+  const box = document.querySelector('.supabox');
+  box.style.display = 'block'; // GPSは同じ箱内のため、とりあえず表示
+  // 必要ならGPSボタン群だけを強調表示するなどのUIも追記可能
+};
+
   };
 
   /*************** Supabase：図形保存/読込 + GPS ***************/
@@ -714,6 +753,28 @@ async function readFGB_fromURL(url) {
 
   /*************** 地図ロード：一括初期化 ***************/
   map.on('load',()=>{
+    /* ==== basemap & controls（陰影起伏図＋GSIレイヤ） ==== */
+// 陰影起伏図（いちばん下）
+if (!map.getSource('hillshade')) {
+  map.addSource('hillshade', {
+    type:'raster',
+    tiles:['https://cyberjapandata.gsi.go.jp/xyz/hillshademap/{z}/{x}/{y}.png'],
+    tileSize:256,
+    attribution:'<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">GSI</a>'
+  });
+  const first = map.getStyle().layers[0]?.id;
+  map.addLayer({ id:'hillshade', type:'raster', source:'hillshade', paint:{ 'raster-opacity':0.55 } }, first);
+}
+// 地理院 標準/写真（少し透明）
+if (!map.getSource('gsi-std')) {
+  map.addSource('gsi-std', { type:'raster', tiles:['https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png'], tileSize:256 });
+  map.addLayer({ id:'gsi-std', type:'raster', source:'gsi-std', layout:{ visibility:'none' }, paint:{ 'raster-opacity':0.85 } });
+}
+if (!map.getSource('gsi-photo')) {
+  map.addSource('gsi-photo', { type:'raster', tiles:['https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg'], tileSize:256 });
+  map.addLayer({ id:'gsi-photo', type:'raster', source:'gsi-photo', layout:{ visibility:'none' }, paint:{ 'raster-opacity':0.85 } });
+}
+
     try{
       // ハザード
       ensureHazardLayers(); updateHazard();
