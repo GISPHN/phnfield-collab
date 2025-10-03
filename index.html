@@ -522,13 +522,16 @@ async function readFGB_fromURL(url) {
   const LABEL_CANDIDATES   =["施設・場所名","住所","共通ID","NO"];
   let cacheEmergency=null, cacheShelter=null, COL_MUNI=null;
 
-  function applyVisibility(){
-    map.setLayoutProperty('emg-circle','visibility', $('chkEmergency').checked?'visible':'none');
-    map.setLayoutProperty('shel-circle','visibility', $('chkShelter').checked?'visible':'none');
-    const vis=$('chkLabel').checked?'visible':'none';
-    if(map.getLayer('emg-label')) map.setLayoutProperty('emg-label','visibility', vis);
-    if(map.getLayer('shel-label')) map.setLayoutProperty('shel-label','visibility', vis);
-  }
+function applyVisibility(){
+  const ev = $('chkEmergency').checked ? 'visible' : 'none';
+  const sv = $('chkShelter').checked  ? 'visible' : 'none';
+  if(map.getLayer('emg-circle'))  map.setLayoutProperty('emg-circle','visibility', ev);
+  if(map.getLayer('shel-circle')) map.setLayoutProperty('shel-circle','visibility', sv);
+  const lv = $('chkLabel').checked ? 'visible' : 'none';
+  if(map.getLayer('emg-label'))   map.setLayoutProperty('emg-label','visibility',  (ev==='visible' ? lv : 'none'));
+  if(map.getLayer('shel-label'))  map.setLayoutProperty('shel-label','visibility', (sv==='visible' ? lv : 'none'));
+}
+
   function fitToData(){
     const fc1=map.getSource('emergency')._data;
     const fc2=map.getSource('shelter')._data;
@@ -597,7 +600,8 @@ async function readFGB_fromURL(url) {
     if(!map.getSource('shelter'))   map.addSource('shelter',  {type:'geojson',data:{type:'FeatureCollection',features:[]}});
     if(!map.getLayer('emg-circle')) map.addLayer({id:'emg-circle',type:'circle',source:'emergency',layout:{ visibility:'none' },paint:{'circle-radius':5,'circle-color':'#e23b3b','circle-stroke-color':'#fff','circle-stroke-width':1}});
     if(!map.getLayer('shel-circle')) map.addLayer({id:'shel-circle',type:'circle',source:'shelter',layout:{ visibility:'none' },paint:{'circle-radius':5,'circle-color':'#2a7be4','circle-stroke-color':'#fff','circle-stroke-width':1}});
-    if(!map.getLayer('emg-label'))   map.addLayer({id:'emg-label',type:'symbol',source:'emergency',layout:{ visibility:'none' },layout:{'text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top'},paint:{'text-halo-width':1.2,'text-halo-color':'#fff'}});
+    if(!map.getLayer('emg-label'))   map.addLayer({id:'emg-label',type:'symbol',source:'emergency',layout:{ visibility:'none','text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top'},paint:{'text-halo-width':1.2,'text-halo-color':'#fff'}
+});
     if(!map.getLayer('shel-label'))  map.addLayer({id:'shel-label',type:'symbol',source:'shelter',  layout:{ visibility:'none','text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top'},paint:{'text-halo-width':1.2,'text-halo-color':'#fff'}});
     bindClickPopup('emg-circle'); bindClickPopup('shel-circle');
 
@@ -680,7 +684,8 @@ async function readFGB_fromURL(url) {
     const fc=draw.getAll();
     const blob=new Blob([JSON.stringify(fc)],{type:'application/json'});
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='features.geojson'; a.click();
-// 共同編集 / GPS パネルのトグル（← btnExportの外に置く）
+};
+    // 共同編集 / GPS パネルのトグル（← btnExportの外に置く）
 $('btnToggleEdit').onclick = ()=>{
   const box = document.querySelector('.supabox');
   box.style.display = (box.style.display==='none'||!box.style.display) ? 'block' : 'none';
@@ -795,7 +800,7 @@ if (!map.getSource('gsi-photo')) {
 // ユーザー図形（グローバル）
 window.userFC = { type:'FeatureCollection', features:[] };
 if (!map.getSource('user-src')){
-  map.addSource('user-src', { type:'geojson', data:userFC });
+  map.addSource('user-src', { type:'geojson', data:window.userFC });
 
   const pinSvg = `data:image/svg+xml;utf8,` + encodeURIComponent(
     `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="40" viewBox="0 0 24 34">
@@ -837,7 +842,7 @@ if (!map.getSource('user-src')){
 /* ==== object tools & list ==== */
 let addMode=null, tempCoords=[], circleCenter=null;
 const setTemp = fc => map.getSource('user-temp').setData(fc || {type:'FeatureCollection',features:[]});
-const pushFeature = f => { userFC.features.push(f); map.getSource('user-src').setData(window.userFC); refreshObjList(); };
+const pushFeature = f => { window.userFC.features.push(f); map.getSource('user-src').setData(window.userFC); refreshObjList(); };
 
 // オブジェクト：メインボタン → サブツール開閉
 document.getElementById('btnObj').addEventListener('click', ()=>{
@@ -919,13 +924,13 @@ function drawTemp(){
 const objList=document.getElementById('objList');
 const scopeRadios=[...document.querySelectorAll('input[name="styleScope"]')];
 function getId(f){ return f.id || (f.id=Math.random().toString(36).slice(2)); }
-function findFeatureById(fid){ return userFC.features.find(f=>getId(f)===fid); }
-function removeFeature(f){ const i=userFC.features.indexOf(f); if(i>-1){ userFC.features.splice(i,1); map.getSource('user-src').setData(window.userFC); refreshObjList(); } }
+function findFeatureById(fid){ return window.userFC.features.find(f=>getId(f)===fid); }
+function removeFeature(f){ const i=window.userFC.features.indexOf(f); if(i>-1){ userFC.features.splice(i,1); map.getSource('user-src').setData(window.userFC); refreshObjList(); } }
 
 function refreshObjList(){
   objList.innerHTML='';
   const groups={}, orphans=[];
-  for (const f of userFC.features){ const g=f.properties._group; g ? (groups[g]??=({id:g,items:[]})).items.push(f) : orphans.push(f); }
+  for (const f of window.userFC.features){ const g=f.properties._group; g ? (groups[g]??=({id:g,items:[]})).items.push(f) : orphans.push(f); }
   orphans.forEach(f=> objList.appendChild(makeObjItem(f)));
   Object.values(groups).forEach(g=>{
     const box=document.createElement('div'); box.className='grpItem'; box.draggable=true; box.dataset.gid=g.id;
@@ -956,7 +961,7 @@ function addDnD(el,kind){
     }else if(dragData.kind==='feature' && kind==='group'){
       findFeatureById(dragData.fid).properties._group=el.dataset.gid;
     }else if(dragData.kind==='group' && kind==='group'){
-      const from=dragData.gid, to=el.dataset.gid; userFC.features.forEach(f=>{ if(f.properties._group===from) f.properties._group=to; });
+      const from=dragData.gid, to=el.dataset.gid; window.userFC.features.forEach(f=>{ if(f.properties._group===from) f.properties._group=to; });
     }
     map.getSource('user-src').setData(window.userFC); refreshObjList();
   });
@@ -981,7 +986,7 @@ function applyStyleFromUI(){
     if(ui.fillOpacity.value)f.properties.fillOpacity=Number(ui.fillOpacity.value);
   };
   if(scope==='all'){ userFC.features.forEach(applyTo); }
-  else if(scope==='group'&&current?.properties._group){ const gid=current.properties._group; userFC.features.filter(f=>f.properties._group===gid).forEach(applyTo); }
+  else if(scope==='group'&&current?.properties._group){ const gid=current.properties._group; window.userFC.features.filter(f=>f.properties._group===gid).forEach(applyTo); }
   else if(scope==='single'&&current){ applyTo(current); }
   map.getSource('user-src').setData(window.userFC);
 }
