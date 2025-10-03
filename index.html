@@ -59,6 +59,50 @@
     .popup-list li{border-bottom:1px solid #f1f5f9;padding:6px 0}
     .popup-list li:last-child{border-bottom:none}
     .popup-list b{display:inline-block;min-width:120px;color:#374151}
+    /* --- 既存パネルを少し透明に --- */
+.panel{ background:rgba(255,255,255,.80); }
+.rightpane{ background:rgba(255,255,255,.82); }
+
+/* --- 上部のオブジェクト追加ボタンとサブツール --- */
+#objToolbar{ display:flex; gap:6px; align-items:center; }
+#objSubtools{ display:none; gap:6px; margin-left:8px; }
+.chip.toggle-on{ background:#1e88e5; color:#fff; }
+.tool{ padding:6px 10px; border-radius:8px; background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.12); cursor:pointer; user-select:none; }
+.tool.active{ outline:2px solid #1e88e5; }
+
+/* --- 右側：オブジェクト一覧（ドラッグ&ドロップ対応） --- */
+#objPanel{ position:absolute; right:12px; top:520px; width:340px; z-index:22; background:rgba(255,255,255,.82); backdrop-filter:blur(6px); border-radius:12px; padding:10px; box-shadow:0 8px 28px rgba(0,0,0,.12); }
+#objList{ max-height:280px; overflow:auto; margin-top:6px; }
+.objItem, .grpItem{
+  background:#fff; border-radius:8px; padding:8px; margin:6px 0; box-shadow:0 1px 6px rgba(0,0,0,.08);
+  display:flex; align-items:center; gap:8px;
+}
+.objItem.dragging, .grpItem.dragging{ opacity:.4; }
+.objType{ width:22px; height:22px; border-radius:4px; display:inline-block; }
+.type-point{ background:#1976d2; }
+.type-line{  background:linear-gradient(90deg,#e53935 0 50%, transparent 0); border-bottom:3px solid #e53935; width:28px; }
+.type-poly{  background:#43a047; opacity:.6; }
+.type-circle{ background:#6d4c41; opacity:.6; border-radius:50%; }
+.dropHint{ outline:2px dashed #1e88e5; }
+
+/* ラベル入力と色・サイズUI */
+.inline{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.small{ font-size:12px; color:#666; }
+input[type="color"]{ width:36px; height:26px; padding:0; border:none; background:transparent; }
+input[type="number"]{ width:70px; }
+
+/* --- 現在地パルス（CSSアニメ） --- */
+.pulse{
+  width:18px; height:18px; border-radius:50%; background:#2196f3; box-shadow:0 0 0 rgba(33,150,243,.4);
+  animation:pulse 2s infinite;
+  border:2px solid #fff;
+}
+@keyframes pulse{
+  0%{ box-shadow:0 0 0 0 rgba(33,150,243,.4); }
+  70%{ box-shadow:0 0 0 18px rgba(33,150,243,0); }
+  100%{ box-shadow:0 0 0 0 rgba(33,150,243,0); }
+}
+
   </style>
 </head>
 <body>
@@ -79,6 +123,16 @@
     <div class="chip btn secondary" id="btnShareEdit">編集リンク</div>
     <div class="chip btn secondary" id="btnShareView">閲覧リンク</div>
     <div class="chip btn secondary" id="btnExport">描画をGeoJSON出力</div>
+    <!-- オブジェクト追加：メインボタン＋サブツール -->
+<div id="objToolbar">
+  <div id="btnObj" class="chip btn secondary">オブジェクト</div>
+  <div id="objSubtools">
+    <div class="tool" data-mode="point">ポイント</div>
+    <div class="tool" data-mode="line">ライン</div>
+    <div class="tool" data-mode="polygon">ポリゴン</div>
+    <div class="tool" data-mode="circle">円</div>
+  </div>
+</div>
     <div style="flex:1"></div>
     <div class="chip" id="roomLabel">room: -</div>
   </div>
@@ -147,6 +201,32 @@
     <h4>レイヤ一覧 / 操作</h4>
     <div style="font-size:12px;color:#6b7280">必要に応じて追加してください</div>
   </div>
+  <!-- ==== Object List Panel ==== -->
+<div id="objPanel" class="panel">
+  <div class="inline small">
+    <strong>オブジェクト一覧</strong>
+    <span style="margin-left:auto"></span>
+    <label><input type="radio" name="styleScope" value="single" checked> 個別</label>
+    <label><input type="radio" name="styleScope" value="group"> グループ</label>
+    <label><input type="radio" name="styleScope" value="all"> 全体</label>
+  </div>
+
+  <div class="inline small" style="margin-top:6px">
+    <span>ラベル</span><input id="uiLabel" type="text" placeholder="ラベル">
+    <span>文字色</span><input id="uiLabelColor" type="color" value="#1f2d3d">
+    <span>サイズ</span><input id="uiLabelSize" type="number" value="12" min="8" max="36">
+  </div>
+  <div class="inline small">
+    <span>線色</span><input id="uiLineColor" type="color" value="#e53935">
+    <span>太さ</span><input id="uiLineWidth" type="number" value="2" min="1" max="12">
+    <span>塗色</span><input id="uiFillColor" type="color" value="#43a047">
+    <span>不透明</span><input id="uiFillOpacity" type="number" value="0.5" min="0" max="1" step="0.05">
+  </div>
+
+  <div id="objList"></div>
+</div>
+<!-- ==== /Object List Panel ==== -->
+
 
   <!-- 左下：Supabase 操作 -->
   <div class="supabox">
@@ -646,7 +726,243 @@ async function readFGB_fromURL(url) {
     }catch(e){
       console.error(e); showErr('初期化エラー: '+e.message);
     }
+    /* ==== basemap & controls ==== */
+// 陰影起伏図（いちばん下）
+if (!map.getSource('hillshade')) {
+  map.addSource('hillshade', {
+    type:'raster',
+    tiles:['https://cyberjapandata.gsi.go.jp/xyz/hillshademap/{z}/{x}/{y}.png'],
+    tileSize:256,
+    attribution:'<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">GSI</a>'
+  });
+  const first = map.getStyle().layers[0]?.id;
+  map.addLayer({ id:'hillshade', type:'raster', source:'hillshade', paint:{ 'raster-opacity':0.55 } }, first);
+}
+// 地理院 標準/写真（少し透明）
+if (!map.getSource('gsi-std')) {
+  map.addSource('gsi-std', { type:'raster', tiles:['https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png'], tileSize:256 });
+  map.addLayer({ id:'gsi-std', type:'raster', source:'gsi-std', layout:{ visibility:'none' }, paint:{ 'raster-opacity':0.85 } });
+}
+if (!map.getSource('gsi-photo')) {
+  map.addSource('gsi-photo', { type:'raster', tiles:['https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg'], tileSize:256 });
+  map.addLayer({ id:'gsi-photo', type:'raster', source:'gsi-photo', layout:{ visibility:'none' }, paint:{ 'raster-opacity':0.85 } });
+}
+// 切替用ヘルパ
+window.switchBase = (name)=>{
+  ['gsi-std','gsi-photo'].forEach(id=>{ if(map.getLayer(id)) map.setLayoutProperty(id,'visibility','none'); });
+  if (name==='std'   && map.getLayer('gsi-std'))   map.setLayoutProperty('gsi-std','visibility','visible');
+  if (name==='photo' && map.getLayer('gsi-photo')) map.setLayoutProperty('gsi-photo','visibility','visible');
+};
+// 縮尺＆現在地（パルス）
+map.addControl(new maplibregl.ScaleControl({ maxWidth:130, unit:'metric' }), 'bottom-left');
+const geo = new maplibregl.GeolocateControl({ positionOptions:{ enableHighAccuracy:true }, trackUserLocation:true, showUserHeading:true });
+map.addControl(geo, 'bottom-left');
+let pulseMarker=null;
+geo.on('geolocate', (e)=>{
+  const { longitude, latitude } = e.coords;
+  if (!pulseMarker){
+    const el=document.createElement('div'); el.className='pulse';
+    pulseMarker=new maplibregl.Marker({ element:el, anchor:'center' }).setLngLat([longitude, latitude]).addTo(map);
+  }else{ pulseMarker.setLngLat([longitude, latitude]); }
+});
+/* ==== /basemap & controls ==== */
+/* ==== user objects layers ==== */
+const userFC = { type:'FeatureCollection', features:[] };
+if (!map.getSource('user-src')){
+  map.addSource('user-src', { type:'geojson', data:userFC });
+
+  const pinSvg = `data:image/svg+xml;utf8,` + encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="40" viewBox="0 0 24 34">
+      <path fill="#e53935" d="M12 0C5.9 0 1 4.9 1 11c0 7.9 9.3 22.3 10 23.4.1.2.3.3.5.3s.4-.1.5-.3c.7-1.1 10-15.5 10-23.4C23 4.9 18.1 0 12 0z"/><circle cx="12" cy="11" r="4.5" fill="#fff"/></svg>`
+  );
+  if (!map.hasImage('pin')) map.loadImage(pinSvg, (err,img)=>{ if(!err && !map.hasImage('pin')) map.addImage('pin', img, { pixelRatio:2 }); });
+
+  map.addLayer({ id:'user-point', type:'symbol', source:'user-src',
+    filter:['==',['get','_type'],'point'],
+    layout:{ 'icon-image':'pin','icon-anchor':'bottom','icon-size':1,
+      'text-field':['coalesce',['get','label'],''],'text-size':['coalesce',['get','labelSize'],12],
+      'text-anchor':'top','text-offset':[0,-0.6],'text-allow-overlap':true },
+    paint:{ 'text-color':['coalesce',['get','labelColor'],'#1f2d3d'],'text-halo-color':'#fff','text-halo-width':2 }
+  });
+  map.addLayer({ id:'user-line', type:'line', source:'user-src',
+    filter:['==',['get','_type'],'line'],
+    paint:{ 'line-color':['coalesce',['get','lineColor'],'#e53935'],'line-width':['coalesce',['get','lineWidth'],2],'line-dasharray':[2,2] }
+  });
+  map.addLayer({ id:'user-poly-fill', type:'fill', source:'user-src',
+    filter:['in',['get','_type'],['literal',['polygon','circle']]],
+    paint:{ 'fill-color':['coalesce',['get','fillColor'],'#43a047'],'fill-opacity':['coalesce',['get','fillOpacity'],0.5] }
+  });
+  map.addLayer({ id:'user-poly-line', type:'line', source:'user-src',
+    filter:['in',['get','_type'],['literal',['polygon','circle']]],
+    paint:{ 'line-color':['coalesce',['get','lineColor'],'#2e7d32'],'line-width':['coalesce',['get','lineWidth'],2] }
+  });
+
+  map.addSource('user-temp', { type:'geojson', data:{ type:'FeatureCollection', features:[] }});
+  map.addLayer({ id:'user-temp-line', type:'line', source:'user-temp',
+    paint:{ 'line-color':'#1976d2','line-width':2,'line-dasharray':[1,1] }});
+  map.addLayer({ id:'user-temp-fill', type:'fill', source:'user-temp',
+    paint:{ 'fill-color':'#1976d2','fill-opacity':0.2 }});
+}
+/* ==== /user objects layers ==== */
+
   });
   </script>
+  <script>
+/* ==== object tools & list ==== */
+let addMode=null, tempCoords=[], circleCenter=null;
+const setTemp = fc => map.getSource('user-temp').setData(fc || {type:'FeatureCollection',features:[]});
+const pushFeature = f => { userFC.features.push(f); map.getSource('user-src').setData(userFC); refreshObjList(); };
+
+// オブジェクト：メインボタン → サブツール開閉
+document.getElementById('btnObj').addEventListener('click', ()=>{
+  const sub=document.getElementById('objSubtools');
+  const now=sub.style.display==='flex';
+  sub.style.display = now ? 'none' : 'flex';
+  document.getElementById('btnObj').classList.toggle('toggle-on', !now);
+  if (now){ addMode=null; setTemp(); document.querySelectorAll('#objSubtools .tool').forEach(t=>t.classList.remove('active')); }
+});
+// 各ツール選択
+document.querySelectorAll('#objSubtools .tool').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('#objSubtools .tool').forEach(t=>t.classList.remove('active'));
+    btn.classList.add('active'); addMode=btn.dataset.mode; tempCoords=[]; circleCenter=null; setTemp();
+  });
+});
+
+// マップ操作
+map.on('click', (e)=>{
+  if (!addMode) return;
+  if (addMode==='point'){
+    const label = document.getElementById('uiLabel')?.value || '';
+    pushFeature({ type:'Feature', properties:{ _type:'point', label }, geometry:{ type:'Point', coordinates:[e.lngLat.lng,e.lngLat.lat] }});
+    return; // 連続追加
+  }
+  if (addMode==='circle'){
+    if (!circleCenter){ circleCenter=[e.lngLat.lng,e.lngLat.lat]; }
+    else{
+      const rKm=turf.distance(circleCenter,[e.lngLat.lng,e.lngLat.lat],{units:'kilometers'});
+      const poly=turf.circle(circleCenter,rKm,{steps:64,units:'kilometers'});
+      pushFeature({ type:'Feature', properties:{ _type:'circle', label:document.getElementById('uiLabel')?.value||'' }, geometry:poly.geometry });
+      setTemp(); circleCenter=null;
+    }
+    return;
+  }
+  const p=[e.lngLat.lng,e.lngLat.lat]; tempCoords.push(p); drawTemp();
+});
+map.on('mousemove',(e)=>{
+  if (!addMode) return;
+  if (addMode==='circle' && circleCenter){
+    const rKm=turf.distance(circleCenter,[e.lngLat.lng,e.lngLat.lat],{units:'kilometers'});
+    const poly=turf.circle(circleCenter,rKm,{steps:64,units:'kilometers'});
+    setTemp({ type:'FeatureCollection', features:[{ type:'Feature', properties:{}, geometry:poly.geometry }] });
+    return;
+  }
+  if ((addMode==='line'||addMode==='polygon') && tempCoords.length){
+    const coords=tempCoords.concat([[e.lngLat.lng,e.lngLat.lat]]);
+    const feat = (addMode==='line')
+      ? { type:'Feature', properties:{}, geometry:{ type:'LineString', coordinates:coords } }
+      : { type:'Feature', properties:{}, geometry:{ type:'Polygon', coordinates:[ coords.concat([tempCoords[0]]) ] } };
+    setTemp({ type:'FeatureCollection', features:[feat] });
+  }
+});
+map.on('dblclick',(e)=>{
+  if (!addMode) return;
+  if (addMode==='line' && tempCoords.length>=2){
+    pushFeature({ type:'Feature', properties:{ _type:'line', label:document.getElementById('uiLabel')?.value||'' },
+      geometry:{ type:'LineString', coordinates: tempCoords.concat([[e.lngLat.lng,e.lngLat.lat]]) } });
+    tempCoords=[]; setTemp();
+  }else if (addMode==='polygon' && tempCoords.length>=2){
+    const coords=tempCoords.concat([[e.lngLat.lng,e.lngLat.lat]]);
+    // 始点に吸着
+    const p0=map.project(tempCoords[0]), pN=map.project([e.lngLat.lng,e.lngLat.lat]);
+    if (Math.hypot(p0.x-pN.x,p0.y-pN.y)<15) coords[coords.length-1]=tempCoords[0];
+    pushFeature({ type:'Feature', properties:{ _type:'polygon', label:document.getElementById('uiLabel')?.value||'' },
+      geometry:{ type:'Polygon', coordinates:[ coords.concat([coords[0]]) ] } });
+    tempCoords=[]; setTemp();
+  }
+});
+function drawTemp(){
+  if (!tempCoords.length) return setTemp();
+  const feat=(addMode==='line')
+    ? { type:'Feature', properties:{}, geometry:{ type:'LineString', coordinates:tempCoords } }
+    : { type:'Feature', properties:{}, geometry:{ type:'Polygon', coordinates:[ tempCoords.concat([tempCoords[0]]) ] } };
+  setTemp({ type:'FeatureCollection', features:[feat] });
+}
+
+// 右パネル：リスト＆グループ＆スタイル
+const objList=document.getElementById('objList');
+const scopeRadios=[...document.querySelectorAll('input[name="styleScope"]')];
+function getId(f){ return f.id || (f.id=Math.random().toString(36).slice(2)); }
+function findFeatureById(fid){ return userFC.features.find(f=>getId(f)===fid); }
+function removeFeature(f){ const i=userFC.features.indexOf(f); if(i>-1){ userFC.features.splice(i,1); map.getSource('user-src').setData(userFC); refreshObjList(); } }
+
+function refreshObjList(){
+  objList.innerHTML='';
+  const groups={}, orphans=[];
+  for (const f of userFC.features){ const g=f.properties._group; g ? (groups[g]??=({id:g,items:[]})).items.push(f) : orphans.push(f); }
+  orphans.forEach(f=> objList.appendChild(makeObjItem(f)));
+  Object.values(groups).forEach(g=>{
+    const box=document.createElement('div'); box.className='grpItem'; box.draggable=true; box.dataset.gid=g.id;
+    box.innerHTML=`<div class="objType type-poly"></div><strong>グループ</strong>`;
+    const wrap=document.createElement('div'); wrap.style.marginTop='4px'; g.items.forEach(f=> wrap.appendChild(makeObjItem(f)));
+    box.appendChild(wrap); addDnD(box,'group'); objList.appendChild(box);
+  });
+}
+function makeObjItem(f){
+  const el=document.createElement('div'); el.className='objItem'; el.draggable=true; el.dataset.fid=getId(f);
+  const typ=f.properties._type, icon=document.createElement('div'); icon.className='objType type-'+typ;
+  const label=document.createElement('input'); label.type='text'; label.value=f.properties.label||''; label.placeholder='ラベル';
+  label.addEventListener('change',()=>{ f.properties.label=label.value; map.getSource('user-src').setData(userFC); });
+  const del=document.createElement('button'); del.textContent='削除'; del.onclick=()=>removeFeature(f);
+  el.append(icon,label,del); addDnD(el,'feature'); return el;
+}
+let dragData=null;
+function addDnD(el,kind){
+  el.addEventListener('dragstart',e=>{ dragData={kind,el,fid:el.dataset.fid,gid:el.dataset.gid}; el.classList.add('dragging'); });
+  el.addEventListener('dragend',  e=>{ el.classList.remove('dragging'); [...document.querySelectorAll('.dropHint')].forEach(n=>n.classList.remove('dropHint')); dragData=null; });
+  el.addEventListener('dragover', e=>{ e.preventDefault(); el.classList.add('dropHint'); });
+  el.addEventListener('dragleave',e=>{ el.classList.remove('dropHint'); });
+  el.addEventListener('drop',    e=>{
+    e.preventDefault(); el.classList.remove('dropHint'); if(!dragData) return;
+    if(dragData.kind==='feature' && kind==='feature'){
+      const a=findFeatureById(dragData.fid), b=findFeatureById(el.dataset.fid), gid='g-'+Math.random().toString(36).slice(2);
+      a.properties._group=gid; b.properties._group=gid;
+    }else if(dragData.kind==='feature' && kind==='group'){
+      findFeatureById(dragData.fid).properties._group=el.dataset.gid;
+    }else if(dragData.kind==='group' && kind==='group'){
+      const from=dragData.gid, to=el.dataset.gid; userFC.features.forEach(f=>{ if(f.properties._group===from) f.properties._group=to; });
+    }
+    map.getSource('user-src').setData(userFC); refreshObjList();
+  });
+}
+
+const ui={ label:document.getElementById('uiLabel'), labelColor:document.getElementById('uiLabelColor'),
+  labelSize:document.getElementById('uiLabelSize'), lineColor:document.getElementById('uiLineColor'),
+  lineWidth:document.getElementById('uiLineWidth'), fillColor:document.getElementById('uiFillColor'),
+  fillOpacity:document.getElementById('uiFillOpacity') };
+Object.values(ui).forEach(inp=> inp.addEventListener('change', ()=>applyStyleFromUI()));
+function applyStyleFromUI(){
+  const scope=scopeRadios.find(r=>r.checked).value;
+  const targetFids=[...objList.querySelectorAll('.objItem')].map(el=>el.dataset.fid);
+  const current=targetFids.length? findFeatureById(targetFids[0]) : null;
+  const applyTo=f=>{
+    if(ui.label.value)      f.properties.label=ui.label.value;
+    if(ui.labelColor.value) f.properties.labelColor=ui.labelColor.value;
+    if(ui.labelSize.value)  f.properties.labelSize=Number(ui.labelSize.value);
+    if(ui.lineColor.value)  f.properties.lineColor=ui.lineColor.value;
+    if(ui.lineWidth.value)  f.properties.lineWidth=Number(ui.lineWidth.value);
+    if(ui.fillColor.value)  f.properties.fillColor=ui.fillColor.value;
+    if(ui.fillOpacity.value)f.properties.fillOpacity=Number(ui.fillOpacity.value);
+  };
+  if(scope==='all'){ userFC.features.forEach(applyTo); }
+  else if(scope==='group'&&current?.properties._group){ const gid=current.properties._group; userFC.features.filter(f=>f.properties._group===gid).forEach(applyTo); }
+  else if(scope==='single'&&current){ applyTo(current); }
+  map.getSource('user-src').setData(userFC);
+}
+// 初期描画
+refreshObjList();
+/* ==== /object tools & list ==== */
+</script>
+
 </body>
 </html>
