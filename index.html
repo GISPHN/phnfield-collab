@@ -351,19 +351,45 @@ async function loadFgbLib() {
  * - 先頭1バイト Range 取得で HTML誤配信を検知
  * - loadFgbLib() を通して自己ホスト/フォールバックでライブラリを確実にロード
  */
+/**
+ * FGB を URL から読み、GeoJSON Feature[] を返す。
+ * 1) まず URL をそのまま渡してストリーミング解析（Range）を試す
+ * 2) 失敗したら全量ダウンロード → Uint8Array でパース（確実）
+ */
 async function readFGB_fromURL(url) {
-  const head = await fetch(url, { headers: { 'Range': 'bytes=0-0' }, cache: 'no-store' });
-  if (!head.ok) throw new Error(`FGBヘッダ取得失敗 ${head.status} ${head.statusText}`);
-  const ct = (head.headers.get('content-type') || '').toLowerCase();
-  if (ct.includes('text/html')) {
-    throw new Error('FGB直リンクがHTMLを返しています（URL/公開設定/パスを確認）');
+  const deserialize = await loadFgbLib();
+
+  // --- まずは簡易チェック（HTML 誤配信防止） ---
+  try {
+    const head = await fetch(url, { headers: { 'Range': 'bytes=0-0' }, cache: 'no-store' });
+    if (!head.ok) throw new Error(`FGBヘッダ取得失敗 ${head.status} ${head.statusText}`);
+    const ct = (head.headers.get('content-type') || '').toLowerCase();
+    if (ct.includes('text/html')) {
+      throw new Error('FGB直リンクがHTMLを返しています（URL/公開設定/パスを確認）');
+    }
+  } catch (e) {
+    // ヘッダ取得がダメでも後段の「全量取得」で救えるので続行
+    console.warn('[FGB] head check skip ->', e.message);
   }
 
-  const deserialize = await loadFgbLib();  // ←ここで自己ホスト/フォールバックを確実化
-  const feats = [];
-  for await (const f of deserialize(url)) feats.push(f);
-  if (!feats.length) throw new Error('FGBの中身が空です');
-  return feats;
+  // --- (A) URL ストリーミングでパース（成功すれば最速） ---
+  try {
+    const featsA = [];
+    for await (const f of deserialize(url)) featsA.push(f);
+    if (featsA.length) return featsA;
+  } catch (e) {
+    console.warn('[FGB] stream parse failed, fallback to full download ->', e.message);
+    // 例の「Cannot destructure property 'minX' of 'r' as it is undefined」もここに来ます
+  }
+
+  // --- (B) フォールバック：全量ダウンロードしてからパース（確実） ---
+  const resp = await fetch(url, { cache: 'no-store' });
+  if (!resp.ok) throw new Error(`FGBダウンロード失敗 ${resp.status} ${resp.statusText}`);
+  const buf = await resp.arrayBuffer();
+  const featsB = [];
+  for await (const f of deserialize(new Uint8Array(buf))) featsB.push(f);
+  if (!featsB.length) throw new Error('FGBの中身が空です');
+  return featsB;
 }
 
   // クリックで属性ポップアップ
