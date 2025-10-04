@@ -118,6 +118,39 @@ input[type="number"]{ width:70px; }
 }
 /* 自治体候補の前面化 */
 .suggest{ position:absolute; z-index:9999; }
+    
+.small-creator{font-size:12px;color:#4b5563}
+.small-creator .xicon{font-weight:700;margin-right:4px}
+.floating{
+  position:absolute; left:360px; top:80px; width:320px;
+  background:rgba(255,255,255,.92); backdrop-filter:blur(8px);
+  box-shadow:0 10px 32px rgba(0,0,0,.18); border-radius:12px; z-index:1000; padding:0;
+}
+.floatHeader{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid #e5e7eb;font-weight:700}
+.floatHeader .sub{font-weight:400;color:#6b7280;margin-left:6px}
+.floatHeader .handle{margin-left:auto;cursor:move}
+.floatBody{padding:10px 12px}
+.suggest{position:absolute;z-index:9999} /* 候補は最前面 */
+
+    // 表示範囲フローティング
+const extentPanel = $('extentPanel');
+$('btnExtent').onclick = ()=>{ extentPanel.dataset.scope=''; $('extentScopeNote').textContent='(全レイヤ)'; extentPanel.style.display='block'; };
+$('btnScopeEmergency').onclick = ()=>{ extentPanel.dataset.scope='emergency'; $('extentScopeNote').textContent='(緊急のみ)'; extentPanel.style.display='block'; };
+$('btnScopeShelter'  ).onclick = ()=>{ extentPanel.dataset.scope='shelter';  $('extentScopeNote').textContent='(避難所のみ)'; extentPanel.style.display='block'; };
+$('btnExtentOK').onclick = ()=>{ extentPanel.style.display='none'; };
+
+// ドラッグ移動
+(function(){
+  const header=extentPanel.querySelector('.handle');
+  let sx=0,sy=0, left=0,top=0, dragging=false;
+  header.addEventListener('pointerdown',e=>{ dragging=true; sx=e.clientX; sy=e.clientY; const r=extentPanel.getBoundingClientRect(); left=r.left; top=r.top; header.setPointerCapture(e.pointerId); });
+  header.addEventListener('pointermove',e=>{ if(!dragging) return; const dx=e.clientX-sx, dy=e.clientY-sy; extentPanel.style.left=(left+dx)+'px'; extentPanel.style.top=(top+dy)+'px'; });
+  header.addEventListener('pointerup',  ()=>{ dragging=false; });
+})();
+.objItem{display:flex;align-items:center;gap:8px;padding:6px;border:1px solid #e5e7eb;border-radius:8px;margin:4px 0;background:rgba(255,255,255,.86);backdrop-filter:blur(4px)}
+.objItem .objLabel{flex:1 1 auto;cursor:default}
+.miniBtn{padding:4px 8px;border-radius:8px;border:none;background:#f3f4f6;cursor:pointer}
+.miniBtn:hover{background:#e5e7eb}
 
   </style>
 </head>
@@ -126,7 +159,15 @@ input[type="number"]{ width:70px; }
 
   <!-- トップバー -->
   <div class="topbar">
-    <div class="chip">PHN Field Collab</div>
+    <div class="chip" style="display:flex;flex-direction:column;align-items:flex-start">
+  <div>PHN Field Collab</div>
+  <div class="small-creator">
+    作成者：
+    <a href="https://x.com/GISPHN" target="_blank" rel="noopener">
+      <span class="xicon">𝕏</span> GISPHN
+    </a>
+  </div>
+</div>
     <div class="chip">ベース:
       <select id="basemapSel" style="border:none;background:transparent;font-weight:700">
         <option value="osm">OSM</option>
@@ -135,11 +176,7 @@ input[type="number"]{ width:70px; }
         <option value="gsi_photo">地理院 写真</option>
       </select>
     </div>
-    <div class="chip btn" id="btnNewRoom">部屋を作成</div>
-    <div class="chip btn secondary" id="btnShareEdit">編集リンク</div>
-    <div class="chip btn secondary" id="btnShareView">閲覧リンク</div>
     <div class="chip btn secondary" id="btnExport">描画をGeoJSON出力</div>
-    <div class="chip btn secondary" id="btnToggleEdit">共同編集</div>
     <div class="chip btn secondary" id="btnToggleGPS">GPS</div>
 
     <!-- オブジェクト追加：メインボタン＋サブツール -->
@@ -153,12 +190,19 @@ input[type="number"]{ width:70px; }
   </div>
 </div>
     <div style="flex:1"></div>
-    <div class="chip" id="roomLabel">room: -</div>
+    <div class="chip btn secondary" id="btnSignIn">サインイン（保存/共同編集）</div>
+<div class="chip" id="signinState" style="display:none">保存ON</div>
+<div class="chip btn secondary" id="btnShare" style="display:none">共有リンク</div>
+
   </div>
 
   <!-- 左パネル -->
   <div class="panel" id="panel">
-    <h3>ハザード / 避難関連データ</h3>
+    <h3>レイヤ / j背景地図</h3>
+　　<div class="group">
+  <button class="btn" id="btnExtent">表示範囲</button>
+  <span style="font-size:12px;color:#6b7280;margin-left:6px">（全レイヤ共通）</span>
+</div>
 
     <div class="group">
       <label><input type="checkbox" id="chkFlood"> 洪水浸水想定区域（想定最大規模）</label><br>
@@ -179,7 +223,18 @@ input[type="number"]{ width:70px; }
       <label><input type="checkbox" id="chkEmergency"> 指定<strong>緊急避難場所</strong>（赤）</label>
       <label><input type="checkbox" id="chkShelter"> 指定<strong>避難所</strong>（青）</label><br>
       <label><input type="checkbox" id="chkLabel"> ラベルを表示</label>
+      <div class="row" style="margin-top:6px">
+  <button class="btn secondary" id="btnScopeEmergency" title="緊急避難場所のみ範囲指定">個別範囲（緊急）</button>
+  <button class="btn secondary" id="btnScopeShelter"   title="指定避難所のみ範囲指定">個別範囲（避難所）</button>
+</div>
+
     </div>
+<!-- ▼ 表示範囲フローティングパネル（ドラッグ可） ▼ -->
+<div id="extentPanel" class="floating" style="display:none">
+  <div class="floatHeader">表示範囲 <span class="sub" id="extentScopeNote">(全レイヤ)</span>
+    <span class="handle" title="ドラッグで移動">⣿</span>
+  </div>
+  <div class="floatBody">
 
     <div class="group">
       <div>表示範囲：</div>
@@ -198,7 +253,7 @@ input[type="number"]{ width:70px; }
       <input id="qMuni" type="text" placeholder="例）奈良市、生駒市 / 東京都"/>
       <div class="suggest" id="suggest"></div>
       <div style="height:6px"></div>
-      <select id="muniSelect" multiple size="10"></select>
+      <select id="muniSelect" multiple size="10" style="display:none"></select>
     </div>
 
     <div class="group">
@@ -208,10 +263,18 @@ input[type="number"]{ width:70px; }
 
     <div class="group">
       <div class="row">
-        <button class="btn" id="btnApply">表示を更新</button>
+        <button class="btn" id="btnApply">適応</button>
         <button class="btn secondary" id="btnReset">リセット</button>
       </div>
       <div style="font-size:12px;color:#6b7280;margin-top:6px">※「表示を更新」で絞り込みを反映します</div>
+          <div class="row" style="margin-top:10px">
+      <button class="btn" id="btnExtentApply">適応</button>
+      <button class="btn secondary" id="btnExtentOK">OK</button>
+    </div>
+  </div>
+</div>
+<!-- ▲ 表示範囲フローティングパネル ▲ -->
+
     </div>
   </div>
 
@@ -228,11 +291,6 @@ input[type="number"]{ width:70px; }
   <div id="objList"></div>
 </div>
 
-  <div class="inline small" style="margin-top:6px">
-    <span>ラベル</span><input id="uiLabel" type="text" placeholder="ラベル">
-    <span>文字色</span><input id="uiLabelColor" type="color" value="#1f2d3d">
-    <span>サイズ</span><input id="uiLabelSize" type="number" value="12" min="8" max="36">
-  </div>
   <div class="inline small">
     <span>線色</span><input id="uiLineColor" type="color" value="#e53935">
     <span>太さ</span><input id="uiLineWidth" type="number" value="2" min="1" max="12">
@@ -323,7 +381,18 @@ const geolocate = new maplibregl.GeolocateControl({
   trackUserLocation: true,
   showUserLocation: true
 });
-map.addControl(geolocate, 'top-left');
+map.addControl(geolocate, 'bottom-left');
+  let pulse;
+geolocate.on('geolocate', (pos)=>{
+  const { longitude, latitude } = pos.coords;
+  if(!pulse){
+    const el=document.createElement('div');
+    el.className='pulse';
+    pulse=new maplibregl.Marker({element:el, anchor:'center'});
+  }
+  pulse.setLngLat([longitude, latitude]).addTo(map);
+});
+
 
 $('basemapSel').addEventListener('change', ()=>{
   const key = $('basemapSel').value;
@@ -341,32 +410,11 @@ $('basemapSel').addEventListener('change', ()=>{
 
 
   /*************** Draw（ポイント/ライン/ポリゴン + 円ツール） ***************/
-  const draw = new MapboxDraw({
-    displayControlsDefault:false,
-    controls:{ point:true, line_string:true, polygon:true, trash:true }
-  });
-  map.addControl(draw,'top-right');
-
-  // 円ツール：中心クリック → 半径(m)入力 → 円ポリゴン作成
-  const circleBtn = document.createElement('div');
-  circleBtn.className='mapbox-gl-draw_ctrl-draw-btn mapbox-gl-draw_circle'; // 既存の見た目に寄せる
-  circleBtn.title='円を追加';
-  circleBtn.onclick=()=>{
-    toast('円の中心を地図上でクリックしてください');
-    const once=(e)=>{
-      const r=prompt('半径 (m) を入力', '200');
-      if(!r) return;
-      const poly=turf.circle([e.lngLat.lng,e.lngLat.lat], Number(r), {steps:64, units:'meters'});
-      draw.add(poly);
-      map.off('click',once);
-    };
-    map.once('click',once);
-  };
-  // DrawコントロールのDOMへ差し込む
-  map.once('load',()=>{
-    const ctrls=document.getElementsByClassName('mapbox-gl-draw_ctrl-top-right');
-    if(ctrls[0]) ctrls[0].appendChild(circleBtn);
-  });
+const draw = new MapboxDraw({
+  displayControlsDefault:false,
+  controls:{} // ← すべてUI非表示
+});
+// map.addControl(draw,'top-right'); ← 追加しない
 
   /*************** ハザード（洪水=1、土砂=3まとめ） ***************/
   // ★ 必要に応じてURLを設定（空なら自動無効）
@@ -548,26 +596,30 @@ function applyVisibility(){
     const munis=new Set(Array.from($('muniSelect').selectedOptions).map(o=>o.value));
     const labelField=$('labelFieldSelect').value;
 
-    const filterByArea=(fullName)=>{
-      if(!fullName) return mode==='all';
-      const pref=PREFS.find(p=>fullName.startsWith(p))||"";
-      const city=fullName.slice(pref.length).trim();
-      if(mode==='all') return true;
-      if(mode==='pref') return prefs.size===0?true:prefs.has(pref);
-      if(mode==='muni'){
-        if(munis.size===0&&prefs.size===0) return true;
-        if(munis.size>0) return munis.has(`${pref} ${city}`);
-        return prefs.has(pref);
-      }
-      return true;
-    };
-    const decorate=(f)=>{
-      const p=f.properties||{};
-      const label=(p[labelField]??p["施設・場所名"]??p["住所"]??p["共通ID"]??p["NO"]??"");
-      return {...f,properties:{...p,__label__:String(label)}};
-    };
-    const emgFiltered=(cacheEmergency||[]).filter(f=>filterByArea(String(f.properties?.[COL_MUNI]||""))).map(decorate);
-    const shlFiltered=(cacheShelter  ||[]).filter(f=>filterByArea(String(f.properties?.[COL_MUNI]||""))).map(decorate);
+    const getScopeFor = (key)=> (window._scopeLayer?.[key] || window._scopeGlobal);
+const filterByArea = (sc)=>(fullName)=>{
+  if(!fullName) return sc.mode==='all';
+  const pref=PREFS.find(p=>fullName.startsWith(p))||"";
+  const city=fullName.slice(pref.length).trim();
+  if(sc.mode==='all') return true;
+  if(sc.mode==='pref') return sc.prefs.length===0 ? true : sc.prefs.includes(pref);
+  if(sc.mode==='muni'){
+    if(sc.munis.length===0 && sc.prefs.length===0) return true;
+    if(sc.munis.length>0) return sc.munis.includes(`${pref} ${city}`);
+    return sc.prefs.includes(pref);
+  }
+  return true;
+};
+const decorateWith=(labelField)=>(f)=>{
+  const p=f.properties||{};
+  const label=(p[labelField]??p["施設・場所名"]??p["住所"]??p["共通ID"]??p["NO"]??"");
+  return {...f,properties:{...p,__label__:String(label)}};
+};
+const scopeE = getScopeFor('emergency');
+const scopeS = getScopeFor('shelter');
+const emgFiltered=(cacheEmergency||[]).filter(f=>filterByArea(scopeE)(String(f.properties?.[COL_MUNI]||""))).map(decorateWith(scopeE.labelField));
+const shlFiltered=(cacheShelter  ||[]).filter(f=>filterByArea(scopeS)(String(f.properties?.[COL_MUNI]||""))).map(decorateWith(scopeS.labelField));
+
 
     map.getSource('emergency').setData({type:'FeatureCollection',features:emgFiltered});
     map.getSource('shelter').setData({type:'FeatureCollection',features:shlFiltered});
@@ -580,7 +632,7 @@ function applyVisibility(){
     const chosenPrefs=new Set(Array.from($('prefSelect').selectedOptions).map(o=>o.value));
     const src=(chosenPrefs.size===0)?window.__allMunicipalLabels:window.__allMunicipalLabels.filter(lbl=>chosenPrefs.has(lbl.split(" ")[0]));
     if(!q){hideSuggest();return;}
-    const hits=src.filter(lbl=>lbl.includes(q)).slice(0,10);
+    const hits=src.filter(lbl=>lbl.includes(q)).slice(0,5);
     if(hits.length===0){hideSuggest();return;}
     $('suggest').innerHTML=hits.map(h=>`<div class="suggest-item" data-v="${h}">${h}</div>`).join("");
     $('suggest').style.display='block';
@@ -604,6 +656,10 @@ function applyVisibility(){
 });
     if(!map.getLayer('shel-label'))  map.addLayer({id:'shel-label',type:'symbol',source:'shelter',  layout:{ visibility:'none','text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top'},paint:{'text-halo-width':1.2,'text-halo-color':'#fff'}});
     bindClickPopup('emg-circle'); bindClickPopup('shel-circle');
+    // ← これを追加（ラベル/レイヤの表示切替）
+['chkEmergency','chkShelter','chkLabel'].forEach(id=>{
+  $(id).addEventListener('change', applyVisibility);
+});
 
     // UI
     document.querySelectorAll('input[name="areaMode"]').forEach(r=>{
@@ -619,6 +675,22 @@ function applyVisibility(){
       Array.from($('prefSelect').options).forEach(o=>o.selected=false);
       Array.from($('muniSelect').options).forEach(o=>o.selected=false);
       $('qMuni').value=''; refresh();
+      // いまのUI選択をスコープに保存（全体 or 個別）
+window._scopeGlobal ||= {mode:'all',prefs:[],munis:[],labelField:''};
+window._scopeLayer  ||= {emergency:null,shelter:null};
+
+const newScope = {
+  mode,
+  prefs: Array.from(prefs),
+  munis: Array.from(munis),
+  labelField
+};
+const scopeTag = (extentPanel.dataset.scope||'').trim();
+
+if(scopeTag==='emergency'){ window._scopeLayer.emergency = newScope; }
+else if(scopeTag==='shelter'){ window._scopeLayer.shelter = newScope; }
+else{ window._scopeGlobal = newScope; } // 全レイヤ
+
     });
     ['chkEmergency','chkShelter','chkLabel'].forEach(id=>$(id).addEventListener('change',applyVisibility));
     $('btnApply').addEventListener('click',refresh);
@@ -673,18 +745,15 @@ function applyVisibility(){
   }
 
   /*************** 部屋・共有・エクスポート ***************/
-  $('roomLabel').textContent='room: '+__room;
-  $('btnNewRoom').onclick=()=>{
-    const r=prompt('新しいroom名（英数字推奨）','room-'+Math.random().toString(36).slice(2,8));
-    if(!r) return; location.hash='#r='+encodeURIComponent(r); location.reload();
-  };
-  $('btnShareEdit').onclick=()=> prompt('編集リンク', location.origin+location.pathname+'#r='+encodeURIComponent(__room));
-  $('btnShareView').onclick=()=> prompt('閲覧リンク', location.origin+location.pathname+'#r='+encodeURIComponent(__room));
-  $('btnExport').onclick=()=>{
-    const fc=draw.getAll();
-    const blob=new Blob([JSON.stringify(fc)],{type:'application/json'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='features.geojson'; a.click();
+$('btnExport').onclick=()=>{
+  const fc = window.userFC || {type:'FeatureCollection',features:[]};
+  const blob=new Blob([JSON.stringify(fc)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='features.geojson';
+  a.click();
 };
+
     // 共同編集 / GPS パネルのトグル（← btnExportの外に置く）
 $('btnToggleEdit').onclick = ()=>{
   const box = document.querySelector('.supabox');
@@ -940,32 +1009,68 @@ function refreshObjList(){
   });
 }
 function makeObjItem(f){
-  const el=document.createElement('div'); el.className='objItem'; el.draggable=true; el.dataset.fid=getId(f);
-  const typ=f.properties._type, icon=document.createElement('div'); icon.className='objType type-'+typ;
-  const label=document.createElement('input'); label.type='text'; label.value=f.properties.label||''; label.placeholder='ラベル';
-  label.addEventListener('change',()=>{ f.properties.label=label.value; map.getSource('user-src').setData(window.userFC); });
-  const del=document.createElement('button'); del.textContent='削除'; del.onclick=()=>removeFeature(f);
-  el.append(icon,label,del); addDnD(el,'feature'); return el;
-}
 let dragData=null;
-function addDnD(el,kind){
-  el.addEventListener('dragstart',e=>{ dragData={kind,el,fid:el.dataset.fid,gid:el.dataset.gid}; el.classList.add('dragging'); });
-  el.addEventListener('dragend',  e=>{ el.classList.remove('dragging'); [...document.querySelectorAll('.dropHint')].forEach(n=>n.classList.remove('dropHint')); dragData=null; });
-  el.addEventListener('dragover', e=>{ e.preventDefault(); el.classList.add('dropHint'); });
-  el.addEventListener('dragleave',e=>{ el.classList.remove('dropHint'); });
-  el.addEventListener('drop',    e=>{
-    e.preventDefault(); el.classList.remove('dropHint'); if(!dragData) return;
-    if(dragData.kind==='feature' && kind==='feature'){
-      const a=findFeatureById(dragData.fid), b=findFeatureById(el.dataset.fid), gid='g-'+Math.random().toString(36).slice(2);
-      a.properties._group=gid; b.properties._group=gid;
-    }else if(dragData.kind==='feature' && kind==='group'){
-      findFeatureById(dragData.fid).properties._group=el.dataset.gid;
-    }else if(dragData.kind==='group' && kind==='group'){
-      const from=dragData.gid, to=el.dataset.gid; window.userFC.features.forEach(f=>{ if(f.properties._group===from) f.properties._group=to; });
-    }
-    map.getSource('user-src').setData(window.userFC); refreshObjList();
-  });
+function makeObjItem(f){
+  const el=document.createElement('div'); el.className='objItem'; el.draggable=true; el.dataset.fid=getId(f);
+  const typ=f.properties._type;
+  const icon=document.createElement('div'); icon.className='objType type-'+typ;
+
+  // ラベル：ダブルクリックで編集
+  const label=document.createElement('span'); label.className='objLabel';
+  label.textContent=f.properties.label||'(無題)';
+  label.title='ダブルクリックでラベル編集';
+  label.ondblclick=()=>{
+    const nv=prompt('ラベルを入力', f.properties.label||'');
+    if(nv===null) return;
+    f.properties.label=nv.trim();
+    label.textContent=f.properties.label||'(無題)';
+    map.getSource('user-src').setData(window.userFC);
+  };
+
+  // 🎨 スタイル編集ポップ
+  const styBtn=document.createElement('button'); styBtn.className='miniBtn'; styBtn.textContent='🎨';
+  styBtn.title='色/太さ/透明度';
+  styBtn.onclick=(e)=>{
+    e.stopPropagation();
+    const p=document.createElement('div');
+    p.className='floating'; p.style.left=(e.clientX-140)+'px'; p.style.top=(e.clientY-40)+'px';
+    p.innerHTML=`
+      <div class="floatHeader">スタイル<span class="handle">⣿</span></div>
+      <div class="floatBody">
+        <div class="row"><label>線色 <input type="color" id="stLine" value="${f.properties.stroke||'#1f2d3d'}"></label></div>
+        <div class="row"><label>線幅 <input type="number" id="stWidth" value="${f.properties.strokeWidth||2}" min="1" max="12"></label></div>
+        <div class="row"><label>塗色 <input type="color" id="stFill" value="${f.properties.fill||'#1f78b4'}"></label></div>
+        <div class="row"><label>不透明度 <input type="number" id="stFillOp" value="${f.properties.fillOpacity??0.3}" min="0" max="1" step="0.05"></label></div>
+        <div class="row" style="margin-top:8px">
+          <button class="btn" id="stApply">適応</button>
+          <button class="btn secondary" id="stClose">閉じる</button>
+        </div>
+      </div>`;
+    document.body.appendChild(p);
+    // ドラッグ
+    (function(h= p.querySelector('.handle')){let sx,sy,L=p.offsetLeft,T=p.offsetTop,D=false;
+      h.addEventListener('pointerdown',e=>{D=true;sx=e.clientX;sy=e.clientY;h.setPointerCapture(e.pointerId);});
+      h.addEventListener('pointermove',e=>{if(!D)return; p.style.left=(L+e.clientX-sx)+'px';p.style.top=(T+e.clientY-sy)+'px';});
+      h.addEventListener('pointerup',()=>{D=false;L=p.offsetLeft;T=p.offsetTop;});
+    })();
+    p.querySelector('#stApply').onclick=()=>{
+      const g=f.properties;
+      g.stroke = p.querySelector('#stLine').value;
+      g.strokeWidth = Number(p.querySelector('#stWidth').value)||2;
+      g.fill = p.querySelector('#stFill').value;
+      g.fillOpacity = Number(p.querySelector('#stFillOp').value)||0.3;
+      map.getSource('user-src').setData(window.userFC);
+    };
+    p.querySelector('#stClose').onclick=()=> p.remove();
+  };
+
+  const del=document.createElement('button'); del.className='miniBtn'; del.textContent='削除'; del.onclick=()=>removeFeature(f);
+
+  el.append(icon,label,styBtn,del);
+  addDnD(el,'feature');
+  return el;
 }
+
 
 const ui={ label:document.getElementById('uiLabel'), labelColor:document.getElementById('uiLabelColor'),
   labelSize:document.getElementById('uiLabelSize'), lineColor:document.getElementById('uiLineColor'),
@@ -993,6 +1098,74 @@ function applyStyleFromUI(){
 // 初期描画
 refreshObjList();
 /* ==== /object tools & list ==== */
+</script>
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<script>
+  // ★ここにあなたの設定を入れてください
+  const SUPABASE_URL = '';        // 例: 'https://xxxxx.supabase.co'
+  const SUPABASE_ANON_KEY = '';   // anon public key
+  let sb = null, sbUser = null;
+
+  (async function initAuth(){
+    if(!SUPABASE_URL || !SUPABASE_ANON_KEY) return; // 未設定なら何もしない
+    sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const { data:{ user } } = await sb.auth.getUser();
+    sbUser = user || null;
+    updateSignUI();
+    if(sbUser) await loadUserData();
+  })();
+
+  function updateSignUI(){
+    if(!sb) return;
+    $('btnSignIn').style.display = sbUser ? 'none' : '';
+    $('signinState').style.display = sbUser ? '' : 'none';
+    $('btnShare').style.display = sbUser ? '' : 'none';
+  }
+
+  $('btnSignIn')?.addEventListener('click', async ()=>{
+    const email = prompt('メールアドレスを入力してください');
+    if(!email || !sb) return;
+    const { error } = await sb.auth.signInWithOtp({ email, options:{ emailRedirectTo: location.href }});
+    if(error) alert('送信に失敗しました: '+error.message);
+    else alert('メールを送信しました。届いたリンクから開いてください。');
+  });
+
+  $('btnShare')?.addEventListener('click', async ()=>{
+    if(!sbUser) return;
+    // シンプルに「ユーザー固有URL」を共有（?uid=）
+    const url = new URL(location.href);
+    url.searchParams.set('uid', sbUser.id);
+    await navigator.clipboard.writeText(url.toString());
+    alert('共有リンクをコピーしました');
+  });
+
+  async function loadUserData(){
+    try{
+      const uid = new URL(location.href).searchParams.get('uid') || sbUser?.id;
+      if(!uid) return;
+      const { data, error } = await sb.from('user_maps').select('data').eq('user_id', uid).single();
+      if(error || !data) return;
+      if(data.data?.features){
+        window.userFC = data.data;
+        if(map.getSource('user-src')) map.getSource('user-src').setData(window.userFC);
+        refreshObjList?.();
+      }
+    }catch(e){ console.warn('loadUserData', e); }
+  }
+
+  // 変更のたび自動保存
+  async function autoSave(){
+    if(!sb || !sbUser) return;
+    try{
+      const rec = { user_id: sbUser.id, data: window.userFC, updated_at: new Date().toISOString() };
+      await sb.from('user_maps').upsert(rec, { onConflict:'user_id' });
+    }catch(e){ console.warn('autosave', e); }
+  }
+  // 既存の pushFeature / removeFeature などの末尾で autoSave() を呼びます
+  const _push = window.pushFeature;
+  window.pushFeature = (f)=>{ _push(f); autoSave(); };
+  const _rm = window.removeFeature;
+  window.removeFeature = (f)=>{ _rm(f); autoSave(); };
 </script>
 
 </body>
