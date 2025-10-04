@@ -370,18 +370,22 @@ geo.on('geolocate', (pos)=>{
 
 $('basemapSel').addEventListener('change', ()=>{
   const key = $('basemapSel').value;
-  // 既存のbaseを外す
+
+  // 既存の base を外す
   if (map.getLayer('base')) map.removeLayer('base');
   if (map.getSource('base')) map.removeSource('base');
 
-  // 新しいsourceを追加
+  // 新しい source を用意
   map.addSource('base', BASE_SOURCES[key]);
 
-  // いちばん下に差し込む（ほかのレイヤを覆わない）
-  const first = map.getStyle().layers[0]?.id;
-  map.addLayer({ id:'base', type:'raster', source:'base' }, first);
-});
+  // hillshade の「直上」に置く（＝陰影は常に下、ベースはその上に来る）
+  const layers = map.getStyle().layers.map(l=>l.id);
+  // hillshade より上に置きたいので、hillshadeの“次”のレイヤを before に指定
+  const idxHill = layers.indexOf('hillshade');
+  const beforeId = (idxHill >= 0 && layers[idxHill+1]) ? layers[idxHill+1] : undefined;
 
+  map.addLayer({ id:'base', type:'raster', source:'base' }, beforeId);
+});
 
   /*************** Draw（ポイント/ライン/ポリゴン + 円ツール） ***************/
 const draw = new MapboxDraw({
@@ -569,6 +573,9 @@ function applyVisibility(){
     const prefs=new Set(Array.from($('prefSelect').selectedOptions).map(o=>o.value));
     const munis=new Set(Array.from($('muniSelect').selectedOptions).map(o=>o.value));
     const labelField=$('labelFieldSelect').value;
+    // ← 既定スコープを用意（最初の1回目でも安全に）
+window._scopeGlobal ||= { mode:'all', prefs:[], munis:[], labelField };
+window._scopeLayer  ||= { emergency:null, shelter:null };
 
     const getScopeFor = (key)=> (window._scopeLayer?.[key] || window._scopeGlobal);
 const filterByArea = (sc)=>(fullName)=>{
@@ -589,8 +596,8 @@ const decorateWith=(labelField)=>(f)=>{
   const label=(p[labelField]??p["施設・場所名"]??p["住所"]??p["共通ID"]??p["NO"]??"");
   return {...f,properties:{...p,__label__:String(label)}};
 };
-const scopeE = getScopeFor('emergency');
-const scopeS = getScopeFor('shelter');
+const scopeE = getScopeFor('emergency') || window._scopeGlobal;
+const scopeS = getScopeFor('shelter')   || window._scopeGlobal;
 const emgFiltered=(cacheEmergency||[]).filter(f=>filterByArea(scopeE)(String(f.properties?.[COL_MUNI]||""))).map(decorateWith(scopeE.labelField));
 const shlFiltered=(cacheShelter  ||[]).filter(f=>filterByArea(scopeS)(String(f.properties?.[COL_MUNI]||""))).map(decorateWith(scopeS.labelField));
 
