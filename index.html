@@ -147,6 +147,7 @@ $('btnExtentOK').onclick = ()=>{ extentPanel.style.display='none'; };
   header.addEventListener('pointermove',e=>{ if(!dragging) return; const dx=e.clientX-sx, dy=e.clientY-sy; extentPanel.style.left=(left+dx)+'px'; extentPanel.style.top=(top+dy)+'px'; });
   header.addEventListener('pointerup',  ()=>{ dragging=false; });
 })();
+
 .objItem{display:flex;align-items:center;gap:8px;padding:6px;border:1px solid #e5e7eb;border-radius:8px;margin:4px 0;background:rgba(255,255,255,.86);backdrop-filter:blur(4px)}
 .objItem .objLabel{flex:1 1 auto;cursor:default}
 .miniBtn{padding:4px 8px;border-radius:8px;border:none;background:#f3f4f6;cursor:pointer}
@@ -189,6 +190,7 @@ $('btnExtentOK').onclick = ()=>{ extentPanel.style.display='none'; };
     <div class="tool" data-mode="circle">円</div>
   </div>
 </div>
+    <div class="chip btn secondary" id="btnGPS">GPS</div>
     <div style="flex:1"></div>
     <div class="chip btn secondary" id="btnSignIn">サインイン（保存/共同編集）</div>
 <div class="chip" id="signinState" style="display:none">保存ON</div>
@@ -198,7 +200,7 @@ $('btnExtentOK').onclick = ()=>{ extentPanel.style.display='none'; };
 
   <!-- 左パネル -->
   <div class="panel" id="panel">
-    <h3>レイヤ / j背景地図</h3>
+    <h3>レイヤ / 背景地図</h3>
 　　<div class="group">
   <button class="btn" id="btnExtent">表示範囲</button>
   <span style="font-size:12px;color:#6b7280;margin-left:6px">（全レイヤ共通）</span>
@@ -266,7 +268,7 @@ $('btnExtentOK').onclick = ()=>{ extentPanel.style.display='none'; };
         <button class="btn" id="btnApply">適応</button>
         <button class="btn secondary" id="btnReset">リセット</button>
       </div>
-      <div style="font-size:12px;color:#6b7280;margin-top:6px">※「表示を更新」で絞り込みを反映します</div>
+      <div style="font-size:12px;color:#6b7280;margin-top:6px">※「適応」で絞り込みを反映します</div>
           <div class="row" style="margin-top:10px">
       <button class="btn" id="btnExtentApply">適応</button>
       <button class="btn secondary" id="btnExtentOK">OK</button>
@@ -291,13 +293,7 @@ $('btnExtentOK').onclick = ()=>{ extentPanel.style.display='none'; };
   <div id="objList"></div>
 </div>
 
-  <div class="inline small">
-    <span>線色</span><input id="uiLineColor" type="color" value="#e53935">
-    <span>太さ</span><input id="uiLineWidth" type="number" value="2" min="1" max="12">
-    <span>塗色</span><input id="uiFillColor" type="color" value="#43a047">
-    <span>不透明</span><input id="uiFillOpacity" type="number" value="0.5" min="0" max="1" step="0.05">
-  </div>
-</div>
+ </div>
 <!-- ==== /Object List Panel ==== -->
 
 
@@ -324,8 +320,6 @@ $('btnExtentOK').onclick = ()=>{ extentPanel.style.display='none'; };
   <!-- ライブラリ -->
   <script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
   <script src="https://unpkg.com/@mapbox/mapbox-gl-draw@1.5.0/dist/mapbox-gl-draw.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/yjs@13.6.8/dist/yjs.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/y-webrtc@10.3.5/dist/y-webrtc.min.js"></script>
   <script src="https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
 
@@ -376,12 +370,9 @@ $('btnExtentOK').onclick = ()=>{ extentPanel.style.display='none'; };
 map.addControl(new maplibregl.ScaleControl({maxWidth:140, unit:'metric'}), 'bottom-left');
 
 // 現在地（MapLibre 組み込み）
-const geolocate = new maplibregl.GeolocateControl({
-  positionOptions: { enableHighAccuracy: true },
-  trackUserLocation: true,
-  showUserLocation: true
-});
+const geo = new maplibregl.GeolocateControl({ positionOptions:{ enableHighAccuracy:true }, trackUserLocation:true, showUserHeading:true });
 map.addControl(geolocate, 'bottom-left');
+  document.getElementById('btnToggleGPS').addEventListener('click', ()=> geolocate.trigger());
   let pulse;
 geolocate.on('geolocate', (pos)=>{
   const { longitude, latitude } = pos.coords;
@@ -623,7 +614,7 @@ const shlFiltered=(cacheShelter  ||[]).filter(f=>filterByArea(scopeS)(String(f.p
 
     map.getSource('emergency').setData({type:'FeatureCollection',features:emgFiltered});
     map.getSource('shelter').setData({type:'FeatureCollection',features:shlFiltered});
-    applyVisibility(); fitToData(); toast('表示を更新しました');
+    applyVisibility(); fitToData(); toast('適応');
   }
 
   function hideSuggest(){ $('suggest').style.display='none'; $('suggest').innerHTML=''; }
@@ -675,21 +666,6 @@ const shlFiltered=(cacheShelter  ||[]).filter(f=>filterByArea(scopeS)(String(f.p
       Array.from($('prefSelect').options).forEach(o=>o.selected=false);
       Array.from($('muniSelect').options).forEach(o=>o.selected=false);
       $('qMuni').value=''; refresh();
-      // いまのUI選択をスコープに保存（全体 or 個別）
-window._scopeGlobal ||= {mode:'all',prefs:[],munis:[],labelField:''};
-window._scopeLayer  ||= {emergency:null,shelter:null};
-
-const newScope = {
-  mode,
-  prefs: Array.from(prefs),
-  munis: Array.from(munis),
-  labelField
-};
-const scopeTag = (extentPanel.dataset.scope||'').trim();
-
-if(scopeTag==='emergency'){ window._scopeLayer.emergency = newScope; }
-else if(scopeTag==='shelter'){ window._scopeLayer.shelter = newScope; }
-else{ window._scopeGlobal = newScope; } // 全レイヤ
 
     });
     ['chkEmergency','chkShelter','chkLabel'].forEach(id=>$(id).addEventListener('change',applyVisibility));
@@ -752,16 +728,6 @@ $('btnExport').onclick=()=>{
   a.href=URL.createObjectURL(blob);
   a.download='features.geojson';
   a.click();
-};
-
-    // 共同編集 / GPS パネルのトグル（← btnExportの外に置く）
-$('btnToggleEdit').onclick = ()=>{
-  const box = document.querySelector('.supabox');
-  box.style.display = (box.style.display==='none'||!box.style.display) ? 'block' : 'none';
-};
-$('btnToggleGPS').onclick = ()=>{
-  const box = document.querySelector('.supabox');
-  box.style.display = 'block';
 };
 
   /*************** Supabase：図形保存/読込 + GPS ***************/
@@ -859,7 +825,6 @@ if (!map.getSource('gsi-photo')) {
       initFGB();
 
       // 共有表示
-      $('roomLabel').textContent='room: '+__room;
     }catch(e){
       console.error(e); showErr('初期化エラー: '+e.message);
     }
@@ -1009,8 +974,6 @@ function refreshObjList(){
   });
 }
 function makeObjItem(f){
-let dragData=null;
-function makeObjItem(f){
   const el=document.createElement('div'); el.className='objItem'; el.draggable=true; el.dataset.fid=getId(f);
   const typ=f.properties._type;
   const icon=document.createElement('div'); icon.className='objType type-'+typ;
@@ -1071,25 +1034,6 @@ function makeObjItem(f){
   return el;
 }
 
-
-const ui={ label:document.getElementById('uiLabel'), labelColor:document.getElementById('uiLabelColor'),
-  labelSize:document.getElementById('uiLabelSize'), lineColor:document.getElementById('uiLineColor'),
-  lineWidth:document.getElementById('uiLineWidth'), fillColor:document.getElementById('uiFillColor'),
-  fillOpacity:document.getElementById('uiFillOpacity') };
-Object.values(ui).forEach(inp=> inp.addEventListener('change', ()=>applyStyleFromUI()));
-function applyStyleFromUI(){
-  const scope=scopeRadios.find(r=>r.checked).value;
-  const targetFids=[...objList.querySelectorAll('.objItem')].map(el=>el.dataset.fid);
-  const current=targetFids.length? findFeatureById(targetFids[0]) : null;
-  const applyTo=f=>{
-    if(ui.label.value)      f.properties.label=ui.label.value;
-    if(ui.labelColor.value) f.properties.labelColor=ui.labelColor.value;
-    if(ui.labelSize.value)  f.properties.labelSize=Number(ui.labelSize.value);
-    if(ui.lineColor.value)  f.properties.lineColor=ui.lineColor.value;
-    if(ui.lineWidth.value)  f.properties.lineWidth=Number(ui.lineWidth.value);
-    if(ui.fillColor.value)  f.properties.fillColor=ui.fillColor.value;
-    if(ui.fillOpacity.value)f.properties.fillOpacity=Number(ui.fillOpacity.value);
-  };
   if(scope==='all'){ userFC.features.forEach(applyTo); }
   else if(scope==='group'&&current?.properties._group){ const gid=current.properties._group; window.userFC.features.filter(f=>f.properties._group===gid).forEach(applyTo); }
   else if(scope==='single'&&current){ applyTo(current); }
