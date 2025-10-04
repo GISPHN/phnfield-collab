@@ -132,22 +132,6 @@ input[type="number"]{ width:70px; }
 .floatBody{padding:10px 12px}
 .suggest{position:absolute;z-index:9999} /* 候補は最前面 */
 
-    // 表示範囲フローティング
-const extentPanel = $('extentPanel');
-$('btnExtent').onclick = ()=>{ extentPanel.dataset.scope=''; $('extentScopeNote').textContent='(全レイヤ)'; extentPanel.style.display='block'; };
-$('btnScopeEmergency').onclick = ()=>{ extentPanel.dataset.scope='emergency'; $('extentScopeNote').textContent='(緊急のみ)'; extentPanel.style.display='block'; };
-$('btnScopeShelter'  ).onclick = ()=>{ extentPanel.dataset.scope='shelter';  $('extentScopeNote').textContent='(避難所のみ)'; extentPanel.style.display='block'; };
-$('btnExtentOK').onclick = ()=>{ extentPanel.style.display='none'; };
-
-// ドラッグ移動
-(function(){
-  const header=extentPanel.querySelector('.handle');
-  let sx=0,sy=0, left=0,top=0, dragging=false;
-  header.addEventListener('pointerdown',e=>{ dragging=true; sx=e.clientX; sy=e.clientY; const r=extentPanel.getBoundingClientRect(); left=r.left; top=r.top; header.setPointerCapture(e.pointerId); });
-  header.addEventListener('pointermove',e=>{ if(!dragging) return; const dx=e.clientX-sx, dy=e.clientY-sy; extentPanel.style.left=(left+dx)+'px'; extentPanel.style.top=(top+dy)+'px'; });
-  header.addEventListener('pointerup',  ()=>{ dragging=false; });
-})();
-
 .objItem{display:flex;align-items:center;gap:8px;padding:6px;border:1px solid #e5e7eb;border-radius:8px;margin:4px 0;background:rgba(255,255,255,.86);backdrop-filter:blur(4px)}
 .objItem .objLabel{flex:1 1 auto;cursor:default}
 .miniBtn{padding:4px 8px;border-radius:8px;border:none;background:#f3f4f6;cursor:pointer}
@@ -178,7 +162,6 @@ $('btnExtentOK').onclick = ()=>{ extentPanel.style.display='none'; };
       </select>
     </div>
     <div class="chip btn secondary" id="btnExport">描画をGeoJSON出力</div>
-    <div class="chip btn secondary" id="btnToggleGPS">GPS</div>
 
     <!-- オブジェクト追加：メインボタン＋サブツール -->
 <div id="objToolbar">
@@ -371,10 +354,10 @@ map.addControl(new maplibregl.ScaleControl({maxWidth:140, unit:'metric'}), 'bott
 
 // 現在地（MapLibre 組み込み）
 const geo = new maplibregl.GeolocateControl({ positionOptions:{ enableHighAccuracy:true }, trackUserLocation:true, showUserHeading:true });
-map.addControl(geolocate, 'bottom-left');
-  document.getElementById('btnToggleGPS').addEventListener('click', ()=> geolocate.trigger());
+map.addControl(geo, 'bottom-left');
+  document.getElementById('btnGPS')?.addEventListener('click', ()=> geo.trigger());
   let pulse;
-geolocate.on('geolocate', (pos)=>{
+geo.on('geolocate', (pos)=>{
   const { longitude, latitude } = pos.coords;
   if(!pulse){
     const el=document.createElement('div');
@@ -670,6 +653,23 @@ const shlFiltered=(cacheShelter  ||[]).filter(f=>filterByArea(scopeS)(String(f.p
     });
     ['chkEmergency','chkShelter','chkLabel'].forEach(id=>$(id).addEventListener('change',applyVisibility));
     $('btnApply').addEventListener('click',refresh);
+    // 表示範囲フローティング（全体／個別）
+const extentPanel = $('extentPanel');
+$('btnExtent').onclick = ()=>{ extentPanel.dataset.scope=''; $('extentScopeNote').textContent='(全レイヤ)'; extentPanel.style.display='block'; };
+$('btnScopeEmergency').onclick = ()=>{ extentPanel.dataset.scope='emergency'; $('extentScopeNote').textContent='(緊急のみ)'; extentPanel.style.display='block'; };
+$('btnScopeShelter'  ).onclick = ()=>{ extentPanel.dataset.scope='shelter';  $('extentScopeNote').textContent='(避難所のみ)'; extentPanel.style.display='block'; };
+$('btnExtentOK').onclick = ()=>{ extentPanel.style.display='none'; };
+$('btnExtentApply').onclick = ()=>{ refresh(); };
+
+// ドラッグ移動
+(function(){
+  const header=extentPanel.querySelector('.handle');
+  let sx=0,sy=0,left=0,top=0,dragging=false;
+  header.addEventListener('pointerdown',e=>{dragging=true;sx=e.clientX;sy=e.clientY;const r=extentPanel.getBoundingClientRect();left=r.left;top=r.top;header.setPointerCapture(e.pointerId);});
+  header.addEventListener('pointermove',e=>{if(!dragging)return;const dx=e.clientX-sx,dy=e.clientY-sy;extentPanel.style.left=(left+dx)+'px';extentPanel.style.top=(top+dy)+'px';});
+  header.addEventListener('pointerup',()=>{dragging=false;});
+})();
+
 
     // 都道府県セレクト
     PREFS.forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;$('prefSelect').appendChild(o);});
@@ -1034,11 +1034,6 @@ function makeObjItem(f){
   return el;
 }
 
-  if(scope==='all'){ userFC.features.forEach(applyTo); }
-  else if(scope==='group'&&current?.properties._group){ const gid=current.properties._group; window.userFC.features.filter(f=>f.properties._group===gid).forEach(applyTo); }
-  else if(scope==='single'&&current){ applyTo(current); }
-  map.getSource('user-src').setData(window.userFC);
-}
 // 初期描画
 refreshObjList();
 /* ==== /object tools & list ==== */
