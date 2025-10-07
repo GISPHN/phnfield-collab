@@ -18,6 +18,11 @@
     .chip{pointer-events:auto;padding:6px 10px;border-radius:10px;border:1px solid #e5e7eb;background:rgba(255,255,255,.9);backdrop-filter:blur(6px);font-size:12px;font-weight:700}
     .chip.btn{cursor:pointer;background:#0ea5e9;color:#fff}
     .chip.btn.secondary{background:#eef2ff;color:#111827}
+    #btnSurvey{position:relative;display:inline-flex;align-items:center;gap:6px}
+    .recBadge{display:inline-flex;align-items:center;justify-content:center;padding:1px 6px;border-radius:6px;font-size:11px;font-weight:700;background:rgba(255,255,255,.9);color:#dc2626;border:1px solid rgba(220,38,38,.25)}
+    .recBadge.recBlink{animation:recBlink 1s steps(2,start) infinite}
+    .recBadge.paused{animation:none;color:#111827;background:#fde68a;border-color:#fbbf24}
+    @keyframes recBlink{0%,49%{opacity:1}50%,100%{opacity:.2}}
 
     /* 左パネル（半透明） */
     .panel{position:absolute;left:12px;top:56px;width:340px;max-height:calc(100% - 68px);padding:12px;border-radius:12px;background:rgba(255,255,255,.86);backdrop-filter:blur(6px);box-shadow:0 8px 28px rgba(0,0,0,.12);overflow:auto;z-index:20}
@@ -69,6 +74,8 @@
     .popup-list li{border-bottom:1px solid #f1f5f9;padding:6px 0}
     .popup-list li:last-child{border-bottom:none}
     .popup-list b{display:inline-block;min-width:120px;color:#374151}
+    .note-popup{font-size:12px;line-height:1.4;max-width:240px}
+    .note-popup div{margin:2px 0}
     /* --- 既存パネルを少し透明に --- */
 .panel{ background:rgba(255,255,255,.80); }
 .rightpane{ background:rgba(255,255,255,.82); }
@@ -183,7 +190,7 @@ input[type="number"]{ width:70px; }
     <div class="tool" data-mode="circle">円</div>
   </div>
 </div>
-    <div class="chip btn secondary" id="btnSurvey">地区踏査</div>
+    <div class="chip btn secondary" id="btnSurvey">地区踏査<span id="surveyRecBadge" class="recBadge" style="display:none">REC</span></div>
     <div style="flex:1"></div>
     <div class="chip btn secondary" id="btnSignIn">サインイン（保存/共同編集）</div>
 <div class="chip" id="signinState" style="display:none">保存ON</div>
@@ -338,6 +345,25 @@ input[type="number"]{ width:70px; }
   </div>
 </div>
 <!-- ▲ ラベル選択パネル ▲ -->
+
+<!-- ▼ ラベル入力パネル（ポイント/ライン/円） ▼ -->
+<div id="simpleLabelPanel" class="floating" style="display:none">
+  <div class="floatHeader"><span id="simpleLabelTitle">ラベル入力</span>
+    <span class="handle" title="ドラッグで移動">⣿</span>
+  </div>
+  <div class="floatBody">
+    <div class="group">
+      <input type="text" id="simpleLabelInput" placeholder="ラベル"/>
+    </div>
+    <div class="group">
+      <div class="row">
+        <button class="btn" id="simpleLabelConfirm">OK</button>
+        <button class="btn secondary" id="simpleLabelCancel">キャンセル</button>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- ▲ ラベル入力パネル（ポイント/ライン/円） ▲ -->
 
 <!-- ▼ ポリゴン ラベル入力パネル ▼ -->
 <div id="polygonLabelPanel" class="floating" style="display:none">
@@ -671,6 +697,7 @@ async function readFGB_fromURL(url) {
     '1.行政と政治','2.人口統計','3.歴史、民族性、価値観','4.物理的環境','5.保健医療と社会福祉','6.経済','7.交通と安全','8.教育・レクリエーション','9.情報とコミュニケーション'
   ];
   const escapeXml=(str)=>String(str??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;').replace(/\r?\n/g,'&#10;');
+  const escapeHtml=(str)=>String(str??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   let cacheEmergency=null, cacheShelter=null, COL_MUNI=null;
   let layerScopeGlobal={ mode:'all', prefs:[], munis:[] };
   const layerScopeOverrides={ emergency:null, shelter:null };
@@ -704,8 +731,18 @@ async function readFGB_fromURL(url) {
   const surveyCapSelect=$('surveyCapSelect');
   const surveyCapWrap=$('surveyCapSelectWrap');
   const surveyNoteMoveWrap=$('surveyNoteMoveWrap');
+  const surveyRecBadge=$('surveyRecBadge');
+  window.__surveyNotePopup=null;
   makeDraggable(surveyPanelEl);
   makeDraggable(surveyNotePanelEl);
+  function showSurveyPanel(){
+    const btn=$('btnSurvey');
+    const rect=btn.getBoundingClientRect();
+    surveyPanelEl.style.display='block';
+    surveyPanelEl.style.transform='none';
+    surveyPanelEl.style.left=`${rect.left}px`;
+    surveyPanelEl.style.top=`${rect.bottom+8}px`;
+  }
   surveyCapSelect.innerHTML='';
   const noneOpt=document.createElement('option'); noneOpt.value=''; noneOpt.textContent='選択しない'; surveyCapSelect.appendChild(noneOpt);
   CAP_TAGS.forEach(tag=>{ const opt=document.createElement('option'); opt.value=tag; opt.textContent=tag; surveyCapSelect.appendChild(opt); });
@@ -742,6 +779,24 @@ async function readFGB_fromURL(url) {
     const val=surveyCapSelect.value;
     surveyCapBtn.textContent = val ? `CAPタグ: ${val}` : 'CAPタグ';
   }
+  function updateSurveyRecIndicator(){
+    if(!surveyRecBadge) return;
+    if(!surveyState.recording){
+      surveyRecBadge.style.display='none';
+      surveyRecBadge.classList.remove('recBlink','paused');
+      return;
+    }
+    surveyRecBadge.style.display='inline-flex';
+    if(surveyState.paused){
+      surveyRecBadge.textContent='⏸';
+      surveyRecBadge.classList.remove('recBlink');
+      surveyRecBadge.classList.add('paused');
+    }else{
+      surveyRecBadge.textContent='REC';
+      surveyRecBadge.classList.add('recBlink');
+      surveyRecBadge.classList.remove('paused');
+    }
+  }
   function updateSurveyStatus(){
     const parts=[];
     parts.push(surveyState.recording ? (surveyState.paused?'記録一時停止':'記録中') : '停止中');
@@ -751,6 +806,7 @@ async function readFGB_fromURL(url) {
     surveyStatusEl.textContent=parts.join(' / ');
     surveyButtons.pause.disabled=!surveyState.recording;
     surveyButtons.pause.textContent=surveyState.paused?'再開 ⏸️一時停止中':'一時停止';
+    updateSurveyRecIndicator();
   }
   function updateSurveyTrackSource(){
     const src=map.getSource('survey-track'); if(!src) return;
@@ -788,6 +844,8 @@ async function readFGB_fromURL(url) {
     updateSurveyTrackSource();
     updateSurveyNotesSource();
     updateSurveyStatus();
+    if(typeof updateMapCursor==='function') updateMapCursor();
+    if(window.__surveyNotePopup){ window.__surveyNotePopup.remove(); window.__surveyNotePopup=null; }
   }
   function ensureSurveyWatch(){
     if(!navigator.geolocation){ toast('位置情報が使えません',true); return false; }
@@ -844,6 +902,7 @@ async function readFGB_fromURL(url) {
       }
       updateSurveyNotesSource();
       updateSurveyStatus();
+      if(window.__surveyNotePopup){ window.__surveyNotePopup.remove(); window.__surveyNotePopup=null; }
     }
     surveyNoteContext={note:null,isNew:false};
     surveyNotePanelEl.style.display='none';
@@ -859,6 +918,7 @@ async function readFGB_fromURL(url) {
     surveyNoteContext={note:null,isNew:false};
     surveyNotePanelEl.style.display='none';
     toast('新しい位置を地図上でクリックしてください');
+    if(typeof updateMapCursor==='function') updateMapCursor();
   }
   function handleSurveyMapClick(e){
     if(surveyState.awaitingMove && surveyState.movingNote){
@@ -870,6 +930,8 @@ async function readFGB_fromURL(url) {
       updateSurveyNotesSource();
       toast('位置を更新しました');
       updateSurveyStatus();
+      if(window.__surveyNotePopup){ window.__surveyNotePopup.remove(); window.__surveyNotePopup=null; }
+      if(typeof updateMapCursor==='function') updateMapCursor();
       return true;
     }
     if(surveyState.manualMode){
@@ -877,6 +939,8 @@ async function readFGB_fromURL(url) {
       surveyButtons.addManual.classList.remove('toggle-active');
       const note={ id:'note-'+Date.now(), lon:e.lngLat.lng, lat:e.lngLat.lat, text1:'', text2:'', capTag:'', labelText:'' };
       openSurveyNoteForm(note,{isNew:true});
+      if(window.__surveyNotePopup){ window.__surveyNotePopup.remove(); window.__surveyNotePopup=null; }
+      if(typeof updateMapCursor==='function') updateMapCursor();
       return true;
     }
     return false;
@@ -969,7 +1033,7 @@ async function readFGB_fromURL(url) {
     surveyState.panelVisible=!surveyState.panelVisible;
     $('btnSurvey').classList.toggle('toggle-on',surveyState.panelVisible);
     if(surveyState.panelVisible){
-      showFloatingPanel(surveyPanelEl);
+      showSurveyPanel();
       surveyFinishEl.style.display='none';
       ensureSurveyWatch();
     }else{
@@ -981,6 +1045,8 @@ async function readFGB_fromURL(url) {
       surveyButtons.edit.classList.remove('toggle-active');
       surveyState.awaitingMove=false;
       surveyState.movingNote=null;
+      if(typeof updateMapCursor==='function') updateMapCursor();
+      if(window.__surveyNotePopup){ window.__surveyNotePopup.remove(); window.__surveyNotePopup=null; }
     }
   });
   surveyButtons.start.addEventListener('click',()=>{
@@ -1003,12 +1069,15 @@ async function readFGB_fromURL(url) {
     surveyState.manualMode=!surveyState.manualMode;
     surveyButtons.addManual.classList.toggle('toggle-active',surveyState.manualMode);
     if(surveyState.manualMode){ toast('追加する位置を地図上でクリックしてください'); surveyState.awaitingMove=false; }
+    if(typeof updateMapCursor==='function') updateMapCursor();
+    if(window.__surveyNotePopup){ window.__surveyNotePopup.remove(); window.__surveyNotePopup=null; }
   });
   surveyButtons.edit.addEventListener('click',()=>{
     surveyState.editMode=!surveyState.editMode;
     surveyButtons.edit.classList.toggle('toggle-active',surveyState.editMode);
     toast(surveyState.editMode?'修正モード：メモをクリックして編集':'修正モードを終了しました');
     if(!surveyState.editMode){ surveyState.awaitingMove=false; surveyState.movingNote=null; }
+    if(window.__surveyNotePopup){ window.__surveyNotePopup.remove(); window.__surveyNotePopup=null; }
   });
   surveyButtons.toggleLabel.addEventListener('click',()=>{
     surveyState.labelsVisible=!surveyState.labelsVisible;
@@ -1243,6 +1312,43 @@ function updateLayerVisibility(){
         header.addEventListener('pointerup',()=>{dragging=false;});
       })();
 
+      const simpleLabelPanel=$('simpleLabelPanel');
+      const simpleLabelInput=$('simpleLabelInput');
+      const simpleLabelTitle=$('simpleLabelTitle');
+      let simpleLabelContext={ feature:null,isNew:false,resumeMode:null,onApply:null };
+      makeDraggable(simpleLabelPanel);
+      function openSimpleLabelEditor(feature,{resumeMode=null,isNew=false,onApply=null,title='ラベル入力'}={}){
+        simpleLabelContext={ feature, isNew, resumeMode, onApply };
+        simpleLabelTitle.textContent=title;
+        simpleLabelInput.value=feature.properties.label||'';
+        centerPanel(simpleLabelPanel);
+        simpleLabelInput.focus();
+        simpleLabelInput.select();
+      }
+      function closeSimpleLabel(apply){
+        const ctx=simpleLabelContext;
+        if(!ctx.feature){ simpleLabelPanel.style.display='none'; return; }
+        if(apply){
+          ctx.feature.properties.label=simpleLabelInput.value.trim();
+          if(ctx.onApply){
+            ctx.onApply(ctx.feature);
+          }else if(ctx.isNew){
+            pushFeature(ctx.feature);
+          }else{
+            map.getSource('user-src').setData(window.userFC);
+            refreshObjList();
+          }
+        }
+        simpleLabelPanel.style.display='none';
+        if(ctx.resumeMode){ activateTool(ctx.resumeMode); }
+        simpleLabelContext={ feature:null,isNew:false,resumeMode:null,onApply:null };
+        updateMapCursor();
+      }
+      $('simpleLabelConfirm').onclick=()=>closeSimpleLabel(true);
+      $('simpleLabelCancel').onclick=()=>closeSimpleLabel(false);
+      simpleLabelInput.addEventListener('keydown',ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); closeSimpleLabel(true); } });
+      window.openSimpleLabelEditor=openSimpleLabelEditor;
+
       const polygonLabelPanel=$('polygonLabelPanel');
       let polygonLabelTarget=null;
       let polygonResumeMode=null;
@@ -1274,9 +1380,11 @@ function updateLayerVisibility(){
         polygonLabelPanel.style.display='none';
         if(polygonResumeMode){ activateTool(polygonResumeMode); }
         polygonResumeMode=null;
+        if(typeof updateMapCursor==='function') updateMapCursor();
       }
       $('polyLabelConfirm').onclick=()=>closePolygonLabel(true);
       $('polyLabelCancel').onclick=()=>closePolygonLabel(false);
+      window.openPolygonLabelEditor=openPolygonLabelEditor;
       (function(){
         const header=polygonLabelPanel.querySelector('.handle');
         let sx=0,sy=0,left=0,top=0,dragging=false;
@@ -1436,7 +1544,7 @@ if (!map.getSource('hillshade')) {
     attribution:'<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank">GSI</a>'
   });
   const first = map.getStyle().layers[0]?.id;
-  map.addLayer({ id:'hillshade', type:'raster', source:'hillshade', paint:{ 'raster-opacity':0.55 } }, first);
+  map.addLayer({ id:'hillshade', type:'raster', source:'hillshade', paint:{ 'raster-opacity':0.45 } }, first);
 }
 // 地理院 標準/写真（少し透明）
 if (!map.getSource('gsi-std')) {
@@ -1467,72 +1575,26 @@ window.userFC = { type:'FeatureCollection', features:[] };
 if (!map.getSource('user-src')){
   map.addSource('user-src', { type:'geojson', data:window.userFC });
 
-  const pinSvgUrl = `data:image/svg+xml;charset=utf-8,` + encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="40" viewBox="0 0 24 34">
-      <path fill="#e53935" d="M12 0C5.9 0 1 4.9 1 11c0 7.9 9.3 22.3 10 23.4.1.2.3.3.5.3s.4-.1.5-.3c.7-1.1 10-15.5 10-23.4C23 4.9 18.1 0 12 0z"/><circle cx="12" cy="11" r="4.5" fill="#fff"/></svg>`
-  );
-  const ensurePinIcon=()=>new Promise(resolve=>{
-    if(map.hasImage('pin')){ resolve(); return; }
-    const img=new Image(28,40);
-    img.onload=()=>{
-      try{ if(!map.hasImage('pin')) map.addImage('pin', img, { pixelRatio:2 }); }
-      catch(err){ console.warn('ピンアイコンの追加に失敗', err); }
-      resolve();
-    };
-    img.onerror=()=>{
-      console.warn('ピンアイコンの読み込みに失敗したため代替アイコンを生成します');
-      const canvas=document.createElement('canvas');
-      canvas.width=28; canvas.height=40;
-      const ctx=canvas.getContext('2d');
-      if(ctx){
-        ctx.fillStyle='#e53935';
-        ctx.beginPath();
-        ctx.moveTo(14,4);
-        ctx.bezierCurveTo(6,4,2,10,2,16);
-        ctx.lineTo(14,38);
-        ctx.lineTo(26,16);
-        ctx.bezierCurveTo(26,10,22,4,14,4);
-        ctx.closePath();
-        ctx.fill();
-        ctx.fillStyle='#fff';
-        ctx.beginPath();
-        ctx.arc(14,16,5.5,0,Math.PI*2);
-        ctx.fill();
-        try{
-          const data=ctx.getImageData(0,0,28,40);
-          if(!map.hasImage('pin')) map.addImage('pin', data, { pixelRatio:2 });
-        }catch(err){ console.warn('代替ピンアイコンの追加に失敗', err); }
-      }
-      resolve();
-    };
-    img.src=pinSvgUrl;
-  });
-
-  await ensurePinIcon();
-
-  if(!map.hasImage('pin')){
-    const data=new Uint8ClampedArray(28*40*4);
-    for(let y=0;y<40;y++){
-      for(let x=0;x<28;x++){
-        const idx=(y*28+x)*4;
-        data[idx]=229; data[idx+1]=57; data[idx+2]=53; data[idx+3]=255;
-      }
-    }
-    try{
-      map.addImage('pin',{width:28,height:40,data},{ pixelRatio:2 });
-    }catch(err){ console.warn('ピンアイコンのフォールバック追加に失敗', err); }
-  }
-
-  map.addLayer({ id:'user-point', type:'symbol', source:'user-src',
+  map.addLayer({ id:'user-point-emoji', type:'symbol', source:'user-src',
     filter:['==',['get','_type'],'point'],
-    layout:{ 'icon-image':'pin','icon-anchor':'bottom','icon-size':1,
-      'text-field':['coalesce',['get','label'],''],'text-size':['coalesce',['get','labelSize'],12],
-      'text-anchor':'top','text-offset':[0,-0.6],'text-allow-overlap':true },
-    paint:{ 'text-color':['coalesce',['get','labelColor'],'#1f2d3d'],'text-halo-color':'#fff','text-halo-width':2 }
+    layout:{ 'text-field':'📍','text-size':28,'text-anchor':'bottom','text-offset':[0,-0.05],'text-allow-overlap':true },
+    paint:{ 'text-halo-color':'#fff','text-halo-width':0 }
+  });
+  map.addLayer({ id:'user-point-label', type:'symbol', source:'user-src',
+    filter:['==',['get','_type'],'point'],
+    layout:{ 'text-field':['coalesce',['get','label'],''],'text-size':['coalesce',['get','labelSize'],12],
+      'text-anchor':'top','text-offset':[0,0.6],'text-allow-overlap':true },
+    paint:{ 'text-color':['coalesce',['get','labelColor'],'#1f2d3d'],'text-halo-color':'#fff','text-halo-width':1.6 }
   });
   map.addLayer({ id:'user-line', type:'line', source:'user-src',
     filter:['==',['get','_type'],'line'],
-    paint:{ 'line-color':['coalesce',['get','lineColor'],'#e53935'],'line-width':['coalesce',['get','lineWidth'],2],'line-dasharray':[2,2] }
+    paint:{ 'line-color':['coalesce',['get','lineColor'],'#e53935'],'line-width':['coalesce',['get','lineWidth'],2],'line-cap':'round','line-join':'round' }
+  });
+  map.addLayer({ id:'user-line-label', type:'symbol', source:'user-src',
+    filter:['==',['get','_type'],'line'],
+    layout:{ 'symbol-placement':'line-center','text-field':['coalesce',['get','label'],''],'text-size':12,
+      'text-allow-overlap':true },
+    paint:{ 'text-color':['coalesce',['get','labelColor'],'#1f2d3d'],'text-halo-color':'#fff','text-halo-width':1.6 }
   });
   map.addLayer({ id:'user-poly-fill', type:'fill', source:'user-src',
     filter:['in',['get','_type'],['literal',['polygon','circle']]],
@@ -1546,6 +1608,7 @@ if (!map.getSource('user-src')){
     filter:['in',['get','_type'],['literal',['polygon','circle']]],
     layout:{
       'text-field':["case",
+        ["==",["get","_type"],"circle"],["coalesce",["get","label"],""],
         ["all",["!has","label1"],["!has","label2"]],"",
         ["all",["has","label1"],["has","label2"]],["concat",["get","label1"],"\n",["get","label2"]],
         ["has","label1"],["get","label1"],
@@ -1557,7 +1620,7 @@ if (!map.getSource('user-src')){
       'text-offset':[0,0],
       'text-allow-overlap':true
     },
-    paint:{ 'text-color':['coalesce',['get','labelColor'],'#1f2d3d'],'text-halo-color':'#fff','text-halo-width':1.2 }
+    paint:{ 'text-color':['coalesce',['get','labelColor'],'#1f2d3d'],'text-halo-color':'#fff','text-halo-width':1.6 }
   });
 
   map.addSource('user-temp', { type:'geojson', data:{ type:'FeatureCollection', features:[] }});
@@ -1576,11 +1639,11 @@ if (!map.getSource('user-src')){
 
   map.addSource('survey-notes', { type:'geojson', data:{ type:'FeatureCollection', features:[] }});
   map.addLayer({ id:'survey-notes-icon', type:'symbol', source:'survey-notes',
-    layout:{ 'text-field':'🖊️','text-size':26,'text-anchor':'bottom','text-offset':[0,-0.4],'text-allow-overlap':true },
-    paint:{} });
+    layout:{ 'text-field':'🚩','text-size':28,'text-anchor':'bottom','text-offset':[0,-0.05],'text-allow-overlap':true },
+    paint:{ 'text-halo-color':'#fff','text-halo-width':0 } });
   map.addLayer({ id:'survey-notes-label', type:'symbol', source:'survey-notes',
     layout:{ 'text-field':['get','labelText'],'text-size':12,'text-anchor':'top','text-offset':[0,0.4],'text-allow-overlap':true,'visibility':'none' },
-    paint:{ 'text-color':'#111827','text-halo-color':'#fff','text-halo-width':1.2 } });
+    paint:{ 'text-color':'#111827','text-halo-color':'#fff','text-halo-width':1.6 } });
 }
 /* ==== /user objects layers ==== */
 
@@ -1591,12 +1654,18 @@ if (!map.getSource('user-src')){
 let addMode=null, tempCoords=[], circleCenter=null;
 const setTemp = fc => map.getSource('user-temp').setData(fc || {type:'FeatureCollection',features:[]});
 const pushFeature = f => { window.userFC.features.push(f); map.getSource('user-src').setData(window.userFC); refreshObjList(); };
+function updateMapCursor(){
+  const canvas=map.getCanvas();
+  const shouldCross = !!addMode || surveyState.manualMode || surveyState.awaitingMove;
+  canvas.style.cursor = shouldCross ? 'crosshair' : '';
+}
 function activateTool(mode){
   addMode=mode;
   tempCoords=[]; circleCenter=null; setTemp();
   document.querySelectorAll('#objSubtools .tool').forEach(t=>t.classList.toggle('active', !!mode && t.dataset.mode===mode));
-  if(mode==='line' || mode==='polygon') map.doubleClickZoom.disable();
+  if(mode==='line' || mode==='polygon' || mode==='circle') map.doubleClickZoom.disable();
   else map.doubleClickZoom.enable();
+  updateMapCursor();
 }
 
 // オブジェクト：メインボタン → サブツール開閉
@@ -1619,17 +1688,13 @@ map.on('click', (e)=>{
   if(handleSurveyMapClick(e)) return;
   if (!addMode) return;
   if (addMode==='point'){
-    pushFeature({ type:'Feature', properties:{ _type:'point' }, geometry:{ type:'Point', coordinates:[e.lngLat.lng,e.lngLat.lat] }});
-    return; // 連続追加
+    const feature={ type:'Feature', properties:{ _type:'point' }, geometry:{ type:'Point', coordinates:[e.lngLat.lng,e.lngLat.lat] }};
+    activateTool(null);
+    openSimpleLabelEditor(feature,{ resumeMode:'point', isNew:true, title:'ポイント ラベル' });
+    return;
   }
   if (addMode==='circle'){
-    if (!circleCenter){ circleCenter=[e.lngLat.lng,e.lngLat.lat]; }
-    else{
-      const rKm=turf.distance(circleCenter,[e.lngLat.lng,e.lngLat.lat],{units:'kilometers'});
-      const poly=turf.circle(circleCenter,rKm,{steps:64,units:'kilometers'});
-      pushFeature({ type:'Feature', properties:{ _type:'circle' }, geometry:poly.geometry });
-      setTemp(); circleCenter=null; activateTool(null);
-    }
+    if (!circleCenter){ circleCenter=[e.lngLat.lng,e.lngLat.lat]; setTemp(); }
     return;
   }
   const p=[e.lngLat.lng,e.lngLat.lat]; tempCoords.push(p); drawTemp();
@@ -1654,20 +1719,41 @@ map.on('dblclick',(e)=>{
   if (!addMode) return;
   e.preventDefault();
   if (addMode==='line' && tempCoords.length>=2){
-    const coords=tempCoords.concat([[e.lngLat.lng,e.lngLat.lat]]);
-    pushFeature({ type:'Feature', properties:{ _type:'line' },
-      geometry:{ type:'LineString', coordinates: coords } });
+    const coords=tempCoords.slice();
+    const feature={ type:'Feature', properties:{ _type:'line' },
+      geometry:{ type:'LineString', coordinates: coords } };
+    tempCoords=[]; setTemp();
     activateTool(null);
-  }else if (addMode==='polygon' && tempCoords.length>=2){
-    const coords=tempCoords.concat([[e.lngLat.lng,e.lngLat.lat]]);
-    const p0=map.project(tempCoords[0]), pN=map.project([e.lngLat.lng,e.lngLat.lat]);
-    if (Math.hypot(p0.x-pN.x,p0.y-pN.y)<15) coords[coords.length-1]=tempCoords[0];
+    openSimpleLabelEditor(feature,{ resumeMode:'line', isNew:true, title:'ライン ラベル' });
+    return;
+  }
+  if (addMode==='polygon' && tempCoords.length>=3){
+    const coords=tempCoords.slice();
+    const first=coords[0];
+    const last=coords[coords.length-1];
+    const p0=map.project(first), pN=map.project(last);
+    if (Math.hypot(p0.x-pN.x,p0.y-pN.y)<15) coords[coords.length-1]=first;
     const feature={ type:'Feature', properties:{ _type:'polygon' },
       geometry:{ type:'Polygon', coordinates:[ coords.concat([coords[0]]) ] } };
+    tempCoords=[]; setTemp();
     activateTool(null);
     openPolygonLabelEditor(feature,{resumeMode:'polygon',isNew:true});
+    return;
   }
-  tempCoords=[]; setTemp();
+  if (addMode==='circle' && circleCenter){
+    const edge=[e.lngLat.lng,e.lngLat.lat];
+    const rKm=turf.distance(circleCenter,edge,{units:'kilometers'});
+    if(!Number.isFinite(rKm) || rKm===0){
+      circleCenter=null; setTemp();
+      activateTool('circle');
+      return;
+    }
+    const poly=turf.circle(circleCenter,rKm,{steps:64,units:'kilometers'});
+    const feature={ type:'Feature', properties:{ _type:'circle' }, geometry:poly.geometry };
+    circleCenter=null; setTemp();
+    activateTool(null);
+    openSimpleLabelEditor(feature,{ resumeMode:'circle', isNew:true, title:'円 ラベル' });
+  }
 });
 function drawTemp(){
   if (!tempCoords.length) return setTemp();
@@ -1678,15 +1764,31 @@ function drawTemp(){
 }
 
 map.on('click','survey-notes-icon',(e)=>{
-  if(!surveyState.editMode) return;
   const f=e.features?.[0];
   if(!f) return;
   const note=surveyState.notes.find(n=>n.id===f.properties?.id);
   if(!note) return;
-  openSurveyNoteForm(note,{isNew:false});
+  if(surveyState.editMode){
+    if(window.__surveyNotePopup){ window.__surveyNotePopup.remove(); window.__surveyNotePopup=null; }
+    openSurveyNoteForm(note,{isNew:false});
+    return;
+  }
+  if(window.__surveyNotePopup){ window.__surveyNotePopup.remove(); }
+  const rows=[];
+  if(note.text1) rows.push(`<div><strong>ラベル1:</strong> ${escapeHtml(note.text1)}</div>`);
+  if(note.text2) rows.push(`<div><strong>ラベル2:</strong> ${escapeHtml(note.text2)}</div>`);
+  if(note.capTag) rows.push(`<div><strong>CAP:</strong> ${escapeHtml(note.capTag)}</div>`);
+  if(!rows.length) rows.push('<div>(内容なし)</div>');
+  const html=`<div class="note-popup">${rows.join('')}</div>`;
+  window.__surveyNotePopup=new maplibregl.Popup({offset:18}).setLngLat([note.lon,note.lat]).setHTML(html).addTo(map);
 });
-map.on('mouseenter','survey-notes-icon',()=>{ if(surveyState.editMode) map.getCanvas().style.cursor='pointer'; });
-map.on('mouseleave','survey-notes-icon',()=>{ map.getCanvas().style.cursor=''; });
+map.on('mouseenter','survey-notes-icon',()=>{
+  if((typeof surveyState!=='undefined' && (surveyState.manualMode||surveyState.awaitingMove)) || addMode){
+    return;
+  }
+  map.getCanvas().style.cursor='pointer';
+});
+map.on('mouseleave','survey-notes-icon',()=>{ if(typeof updateMapCursor==='function') updateMapCursor(); else map.getCanvas().style.cursor=''; });
 
 // 右パネル：リスト＆グループ＆スタイル
 const objList=document.getElementById('objList');
@@ -1727,11 +1829,14 @@ function makeObjItem(f){
       openPolygonLabelEditor(f,{isNew:false});
       return;
     }
-    const nv=prompt('ラベルを入力', f.properties.label||'');
-    if(nv===null) return;
-    f.properties.label=nv.trim();
-    label.textContent=makeLabelText();
-    map.getSource('user-src').setData(window.userFC);
+    openSimpleLabelEditor(f,{
+      isNew:false,
+      title:'ラベル編集',
+      onApply:()=>{
+        label.textContent=makeLabelText();
+        map.getSource('user-src').setData(window.userFC);
+      }
+    });
   };
 
   // 🎨 スタイル編集ポップ
