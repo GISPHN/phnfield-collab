@@ -79,6 +79,7 @@
     /* --- 既存パネルを少し透明に --- */
 .panel{ background:rgba(255,255,255,.80); }
 .rightpane{ background:rgba(255,255,255,.82); }
+.cursor-crosshair{cursor:crosshair!important;}
 
 /* --- 上部のオブジェクト追加ボタンとサブツール --- */
 #objToolbar{ display:flex; gap:6px; align-items:center; pointer-events:auto; }
@@ -479,6 +480,91 @@ input[type="number"]{ width:70px; }
     });
     header.addEventListener('pointerup',()=>{dragging=false;});
   };
+  const centerPanel=(panel)=>{ if(panel) showFloatingPanel(panel); };
+
+  const simpleLabelPanel=$('simpleLabelPanel');
+  const simpleLabelInput=$('simpleLabelInput');
+  const simpleLabelTitle=$('simpleLabelTitle');
+  makeDraggable(simpleLabelPanel);
+  let simpleLabelContext={ feature:null,isNew:false,resumeMode:null,onApply:null };
+  function openSimpleLabelEditor(feature,{resumeMode=null,isNew=false,onApply=null,title='ラベル入力'}={}){
+    simpleLabelContext={ feature, isNew, resumeMode, onApply };
+    if(simpleLabelTitle) simpleLabelTitle.textContent=title;
+    if(simpleLabelInput) simpleLabelInput.value=feature?.properties?.label||'';
+    centerPanel(simpleLabelPanel);
+    if(simpleLabelInput){
+      simpleLabelInput.focus();
+      simpleLabelInput.select();
+    }
+  }
+  function closeSimpleLabel(apply){
+    const ctx=simpleLabelContext;
+    if(!ctx.feature){ if(simpleLabelPanel) simpleLabelPanel.style.display='none'; return; }
+    if(apply){
+      ctx.feature.properties=ctx.feature.properties||{};
+      const labelVal=simpleLabelInput ? simpleLabelInput.value.trim() : '';
+      ctx.feature.properties.label=labelVal;
+      if(typeof ctx.onApply==='function'){
+        ctx.onApply(ctx.feature);
+      }else if(ctx.isNew){
+        if(typeof window.pushFeature==='function') window.pushFeature(ctx.feature);
+        else if(window.userFC && Array.isArray(window.userFC.features)){ window.userFC.features.push(ctx.feature); }
+        if(typeof syncUserFeatures==='function' && typeof window.pushFeature!=='function') syncUserFeatures();
+      }else{
+        if(typeof syncUserFeatures==='function') syncUserFeatures();
+      }
+    }
+    if(simpleLabelPanel) simpleLabelPanel.style.display='none';
+    if(ctx.resumeMode && typeof activateTool==='function') activateTool(ctx.resumeMode);
+    simpleLabelContext={ feature:null,isNew:false,resumeMode:null,onApply:null };
+    if(typeof updateMapCursor==='function') updateMapCursor();
+  }
+  $('simpleLabelConfirm')?.addEventListener('click',()=>closeSimpleLabel(true));
+  $('simpleLabelCancel')?.addEventListener('click',()=>closeSimpleLabel(false));
+  simpleLabelInput?.addEventListener('keydown',ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); closeSimpleLabel(true); } });
+  window.openSimpleLabelEditor=openSimpleLabelEditor;
+
+  const polygonLabelPanel=$('polygonLabelPanel');
+  makeDraggable(polygonLabelPanel);
+  let polygonLabelTarget=null;
+  let polygonResumeMode=null;
+  let polygonIsNew=false;
+  function openPolygonLabelEditor(feature,{resumeMode=null,isNew=false}={}){
+    polygonLabelTarget=feature;
+    polygonResumeMode=resumeMode;
+    polygonIsNew=isNew;
+    if(feature){
+      const props=feature.properties||{};
+      $('polyLabelInput1').value=props.label1||'';
+      $('polyLabelInput2').value=props.label2||'';
+    }
+    centerPanel(polygonLabelPanel);
+  }
+  function closePolygonLabel(apply){
+    if(polygonLabelTarget && apply){
+      const l1=$('polyLabelInput1').value.trim();
+      const l2=$('polyLabelInput2').value.trim();
+      polygonLabelTarget.properties=polygonLabelTarget.properties||{};
+      polygonLabelTarget.properties.label1=l1;
+      polygonLabelTarget.properties.label2=l2;
+      polygonLabelTarget.properties.label=[l1,l2].filter(Boolean).join(' / ');
+      if(polygonIsNew){
+        if(typeof window.pushFeature==='function') window.pushFeature(polygonLabelTarget);
+        else if(window.userFC && Array.isArray(window.userFC.features)){ window.userFC.features.push(polygonLabelTarget); if(typeof syncUserFeatures==='function') syncUserFeatures(); }
+      }else{
+        if(typeof syncUserFeatures==='function') syncUserFeatures();
+      }
+    }
+    polygonLabelTarget=null;
+    polygonIsNew=false;
+    if(polygonLabelPanel) polygonLabelPanel.style.display='none';
+    if(polygonResumeMode && typeof activateTool==='function') activateTool(polygonResumeMode);
+    polygonResumeMode=null;
+    if(typeof updateMapCursor==='function') updateMapCursor();
+  }
+  $('polyLabelConfirm')?.addEventListener('click',()=>closePolygonLabel(true));
+  $('polyLabelCancel')?.addEventListener('click',()=>closePolygonLabel(false));
+  window.openPolygonLabelEditor=openPolygonLabelEditor;
 
   const STORAGE_KEYS={
     userObjects:'phnfc_user_objects_v1',
@@ -514,7 +600,7 @@ input[type="number"]{ width:70px; }
     gsi_std:   { type:'raster', tiles:["https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png"], tileSize:256, attribution:"© GSI" },
     gsi_photo: { type:'raster', tiles:["https://cyberjapandata.gsi.go.jp/xyz/ort/{z}/{x}/{y}.jpg"], tileSize:256, attribution:"© GSI" }
   };
-  const BASE_OPACITY = 0.85;
+  const BASE_OPACITY = 0.75;
 
   const map = new maplibregl.Map({
     container:'map',
@@ -539,10 +625,23 @@ geoControl.on('geolocate', (pos)=>{
   if(!pulse){
     const el=document.createElement('div');
     el.className='pulse';
+    el.style.pointerEvents='none';
+    el.style.cursor='inherit';
     pulse=new maplibregl.Marker({element:el, anchor:'center'});
   }
   pulse.setLngLat([longitude, latitude]).addTo(map);
 });
+
+const overlayLayerOrder=[
+  'user-temp-fill','user-temp-line',
+  'user-poly-fill','user-poly-line','user-line','user-line-label','user-poly-label',
+  'user-point-emoji','user-point-label',
+  'survey-track-line','survey-track-points',
+  'survey-notes-icon','survey-notes-label'
+];
+function ensureOverlayOrder(){
+  overlayLayerOrder.forEach(id=>{ if(map.getLayer(id)) map.moveLayer(id); });
+}
 
 
 $('basemapSel').addEventListener('change', ()=>{
@@ -562,6 +661,7 @@ $('basemapSel').addEventListener('change', ()=>{
   const beforeId = (idxHill >= 0 && layers[idxHill+1]) ? layers[idxHill+1] : undefined;
 
   map.addLayer({ id:'base', type:'raster', source:'base', paint:{'raster-opacity':BASE_OPACITY} }, beforeId);
+  ensureOverlayOrder();
 });
 
   /*************** Draw（ポイント/ライン/ポリゴン + 円ツール） ***************/
@@ -1266,7 +1366,6 @@ function updateLayerVisibility(){
       });
 
       const extentPanel = $('extentPanel');
-      function centerPanel(panel){ showFloatingPanel(panel); }
       function loadScopeToUI(scope){
         const radio=document.querySelector(`input[name="areaMode"][value="${scope.mode}"]`);
         if(radio) radio.checked=true;
@@ -1375,100 +1474,6 @@ function updateLayerVisibility(){
         });
         header.addEventListener('pointerup',()=>{dragging=false;});
       })();
-
-      const simpleLabelPanel=$('simpleLabelPanel');
-      const simpleLabelInput=$('simpleLabelInput');
-      const simpleLabelTitle=$('simpleLabelTitle');
-      let simpleLabelContext={ feature:null,isNew:false,resumeMode:null,onApply:null };
-      makeDraggable(simpleLabelPanel);
-      function openSimpleLabelEditor(feature,{resumeMode=null,isNew=false,onApply=null,title='ラベル入力'}={}){
-        simpleLabelContext={ feature, isNew, resumeMode, onApply };
-        simpleLabelTitle.textContent=title;
-        simpleLabelInput.value=feature.properties.label||'';
-        centerPanel(simpleLabelPanel);
-        simpleLabelInput.focus();
-        simpleLabelInput.select();
-      }
-      function closeSimpleLabel(apply){
-        const ctx=simpleLabelContext;
-        if(!ctx.feature){ simpleLabelPanel.style.display='none'; return; }
-        if(apply){
-          ctx.feature.properties.label=simpleLabelInput.value.trim();
-          if(ctx.onApply){
-            ctx.onApply(ctx.feature);
-          }else if(ctx.isNew){
-            pushFeature(ctx.feature);
-          }else{
-            syncUserFeatures();
-          }
-        }
-        simpleLabelPanel.style.display='none';
-        if(ctx.resumeMode){ activateTool(ctx.resumeMode); }
-        simpleLabelContext={ feature:null,isNew:false,resumeMode:null,onApply:null };
-        updateMapCursor();
-      }
-      $('simpleLabelConfirm').onclick=()=>closeSimpleLabel(true);
-      $('simpleLabelCancel').onclick=()=>closeSimpleLabel(false);
-      simpleLabelInput.addEventListener('keydown',ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); closeSimpleLabel(true); } });
-      window.openSimpleLabelEditor=openSimpleLabelEditor;
-
-      const polygonLabelPanel=$('polygonLabelPanel');
-      let polygonLabelTarget=null;
-      let polygonResumeMode=null;
-      let polygonIsNew=false;
-      function openPolygonLabelEditor(feature,{resumeMode=null,isNew=false}={}){
-        polygonLabelTarget=feature;
-        polygonResumeMode=resumeMode;
-        polygonIsNew=isNew;
-        $('polyLabelInput1').value=feature.properties.label1||'';
-        $('polyLabelInput2').value=feature.properties.label2||'';
-        centerPanel(polygonLabelPanel);
-      }
-      function closePolygonLabel(apply){
-        if(polygonLabelTarget && apply){
-          const l1=$('polyLabelInput1').value.trim();
-          const l2=$('polyLabelInput2').value.trim();
-          polygonLabelTarget.properties.label1=l1;
-          polygonLabelTarget.properties.label2=l2;
-          polygonLabelTarget.properties.label=[l1,l2].filter(Boolean).join(' / ');
-          if(polygonIsNew){
-            pushFeature(polygonLabelTarget);
-          }else{
-            syncUserFeatures();
-          }
-        }
-        polygonLabelTarget=null;
-        polygonIsNew=false;
-        polygonLabelPanel.style.display='none';
-        if(polygonResumeMode){ activateTool(polygonResumeMode); }
-        polygonResumeMode=null;
-        if(typeof updateMapCursor==='function') updateMapCursor();
-      }
-      $('polyLabelConfirm').onclick=()=>closePolygonLabel(true);
-      $('polyLabelCancel').onclick=()=>closePolygonLabel(false);
-      window.openPolygonLabelEditor=openPolygonLabelEditor;
-      (function(){
-        const header=polygonLabelPanel.querySelector('.handle');
-        let sx=0,sy=0,left=0,top=0,dragging=false;
-        if(!header) return;
-        header.addEventListener('pointerdown',e=>{
-          dragging=true;sx=e.clientX;sy=e.clientY;
-          const rect=polygonLabelPanel.getBoundingClientRect();
-          polygonLabelPanel.style.transform='none';
-          polygonLabelPanel.style.left=rect.left+'px';
-          polygonLabelPanel.style.top=rect.top+'px';
-          left=rect.left;top=rect.top;
-          header.setPointerCapture(e.pointerId);
-        });
-        header.addEventListener('pointermove',e=>{
-          if(!dragging)return;
-          const dx=e.clientX-sx,dy=e.clientY-sy;
-          polygonLabelPanel.style.left=(left+dx)+'px';
-          polygonLabelPanel.style.top=(top+dy)+'px';
-        });
-        header.addEventListener('pointerup',()=>{dragging=false;});
-      })();
-
 
       // 都道府県セレクト
       PREFS.forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;$('prefSelect').appendChild(o);});
@@ -1611,11 +1616,11 @@ if (!map.getSource('hillshade')) {
 // 地理院 標準/写真（少し透明）
 if (!map.getSource('gsi-std')) {
   map.addSource('gsi-std', { type:'raster', tiles:['https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png'], tileSize:256 });
-  map.addLayer({ id:'gsi-std', type:'raster', source:'gsi-std', layout:{ visibility:'none' }, paint:{ 'raster-opacity':0.85 } });
+  map.addLayer({ id:'gsi-std', type:'raster', source:'gsi-std', layout:{ visibility:'none' }, paint:{ 'raster-opacity':0.75 } });
 }
 if (!map.getSource('gsi-photo')) {
   map.addSource('gsi-photo', { type:'raster', tiles:['https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg'], tileSize:256 });
-  map.addLayer({ id:'gsi-photo', type:'raster', source:'gsi-photo', layout:{ visibility:'none' }, paint:{ 'raster-opacity':0.85 } });
+  map.addLayer({ id:'gsi-photo', type:'raster', source:'gsi-photo', layout:{ visibility:'none' }, paint:{ 'raster-opacity':0.75 } });
 }
 
     try{
@@ -1706,6 +1711,7 @@ if (!map.getSource('user-src')){
   map.addLayer({ id:'survey-notes-label', type:'symbol', source:'survey-notes',
     layout:{ 'text-field':['get','labelText'],'text-size':12,'text-anchor':'top','text-offset':[0,0.4],'text-allow-overlap':true,'visibility':'none' },
     paint:{ 'text-color':'#111827','text-halo-color':'#fff','text-halo-width':1.6 } });
+  ensureOverlayOrder();
 }
 /* ==== /user objects layers ==== */
 
@@ -1729,6 +1735,7 @@ function updateMapCursor(){
   const canvas=map.getCanvas();
   const shouldCross = !!addMode || surveyState.manualMode || surveyState.awaitingMove;
   canvas.style.cursor = shouldCross ? 'crosshair' : '';
+  canvas.classList.toggle('cursor-crosshair', shouldCross);
 }
 function activateTool(mode){
   addMode=mode;
