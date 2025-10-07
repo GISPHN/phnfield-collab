@@ -480,6 +480,30 @@ input[type="number"]{ width:70px; }
     header.addEventListener('pointerup',()=>{dragging=false;});
   };
 
+  const STORAGE_KEYS={
+    userObjects:'phnfc_user_objects_v1',
+    surveyNotes:'phnfc_survey_notes_v1'
+  };
+  function loadStoredUserFC(){
+    if(!window.localStorage) return null;
+    try{
+      const raw=localStorage.getItem(STORAGE_KEYS.userObjects);
+      if(!raw) return null;
+      const parsed=JSON.parse(raw);
+      if(parsed && parsed.type==='FeatureCollection' && Array.isArray(parsed.features)){
+        return parsed;
+      }
+    }catch(err){ console.warn('loadStoredUserFC', err); }
+    return null;
+  }
+  function saveUserFCToStorage(fc){
+    if(!window.localStorage) return;
+    try{
+      localStorage.setItem(STORAGE_KEYS.userObjects, JSON.stringify(fc));
+    }catch(err){ console.warn('saveUserFCToStorage', err); }
+  }
+  let storedUserFC=loadStoredUserFC();
+
   // 都道府県
   const PREFS=["北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県","茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県","新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県","静岡県","愛知県","三重県","滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県","鳥取県","島根県","岡山県","広島県","山口県","徳島県","香川県","愛媛県","高知県","福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"];
 
@@ -775,6 +799,37 @@ async function readFGB_fromURL(url) {
     if(note.capTag) lines.push(`[${note.capTag}]`);
     return lines.join('\n');
   };
+  function loadStoredSurveyNotes(){
+    if(!window.localStorage) return [];
+    try{
+      const raw=localStorage.getItem(STORAGE_KEYS.surveyNotes);
+      if(!raw) return [];
+      const parsed=JSON.parse(raw);
+      if(Array.isArray(parsed)){
+        return parsed.map(n=>({
+          id:n.id||('note-'+Date.now()+Math.random().toString(36).slice(2)),
+          lon:Number(n.lon),
+          lat:Number(n.lat),
+          text1:n.text1||'',
+          text2:n.text2||'',
+          capTag=n.capTag||'',
+          labelText:n.labelText || buildNoteLabel(n)
+        }));
+      }
+    }catch(err){ console.warn('loadStoredSurveyNotes', err); }
+    return [];
+  }
+  function saveSurveyNotesToStorage(notes){
+    if(!window.localStorage) return;
+    try{
+      localStorage.setItem(STORAGE_KEYS.surveyNotes, JSON.stringify(notes));
+    }catch(err){ console.warn('saveSurveyNotesToStorage', err); }
+  }
+  const storedSurveyNotes=loadStoredSurveyNotes();
+  if(storedSurveyNotes.length){
+    surveyState.notes=storedSurveyNotes;
+    saveSurveyNotesToStorage(surveyState.notes);
+  }
   function updateCapButtonText(){
     const val=surveyCapSelect.value;
     surveyCapBtn.textContent = val ? `CAPタグ: ${val}` : 'CAPタグ';
@@ -844,6 +899,7 @@ async function readFGB_fromURL(url) {
     updateSurveyTrackSource();
     updateSurveyNotesSource();
     updateSurveyStatus();
+    saveSurveyNotesToStorage(surveyState.notes);
     if(typeof updateMapCursor==='function') updateMapCursor();
     if(window.__surveyNotePopup){ window.__surveyNotePopup.remove(); window.__surveyNotePopup=null; }
   }
@@ -902,6 +958,7 @@ async function readFGB_fromURL(url) {
       }
       updateSurveyNotesSource();
       updateSurveyStatus();
+      saveSurveyNotesToStorage(surveyState.notes);
       if(window.__surveyNotePopup){ window.__surveyNotePopup.remove(); window.__surveyNotePopup=null; }
     }
     surveyNoteContext={note:null,isNew:false};
@@ -930,6 +987,7 @@ async function readFGB_fromURL(url) {
       updateSurveyNotesSource();
       toast('位置を更新しました');
       updateSurveyStatus();
+      saveSurveyNotesToStorage(surveyState.notes);
       if(window.__surveyNotePopup){ window.__surveyNotePopup.remove(); window.__surveyNotePopup=null; }
       if(typeof updateMapCursor==='function') updateMapCursor();
       return true;
@@ -1335,8 +1393,7 @@ function updateLayerVisibility(){
           }else if(ctx.isNew){
             pushFeature(ctx.feature);
           }else{
-            map.getSource('user-src').setData(window.userFC);
-            refreshObjList();
+            syncUserFeatures();
           }
         }
         simpleLabelPanel.style.display='none';
@@ -1371,8 +1428,7 @@ function updateLayerVisibility(){
           if(polygonIsNew){
             pushFeature(polygonLabelTarget);
           }else{
-            map.getSource('user-src').setData(window.userFC);
-            refreshObjList();
+            syncUserFeatures();
           }
         }
         polygonLabelTarget=null;
@@ -1571,7 +1627,7 @@ if (!map.getSource('gsi-photo')) {
 /* ==== /basemap & controls ==== */
 /* ==== user objects layers ==== */
 // ユーザー図形（グローバル）
-window.userFC = { type:'FeatureCollection', features:[] };
+window.userFC = storedUserFC || { type:'FeatureCollection', features:[] };
 if (!map.getSource('user-src')){
   map.addSource('user-src', { type:'geojson', data:window.userFC });
 
@@ -1647,13 +1703,22 @@ if (!map.getSource('user-src')){
 }
 /* ==== /user objects layers ==== */
 
+  updateSurveyNotesSource();
+  updateSurveyStatus();
+
   });
   </script>
   <script>
 /* ==== object tools & list ==== */
 let addMode=null, tempCoords=[], circleCenter=null;
 const setTemp = fc => map.getSource('user-temp').setData(fc || {type:'FeatureCollection',features:[]});
-const pushFeature = f => { window.userFC.features.push(f); map.getSource('user-src').setData(window.userFC); refreshObjList(); };
+function syncUserFeatures({refreshList=true}={}){
+  if(map.getSource('user-src')) map.getSource('user-src').setData(window.userFC);
+  if(refreshList) refreshObjList();
+  saveUserFCToStorage(window.userFC);
+}
+const pushFeature = f => { window.userFC.features.push(f); syncUserFeatures(); };
+window.pushFeature = pushFeature;
 function updateMapCursor(){
   const canvas=map.getCanvas();
   const shouldCross = !!addMode || surveyState.manualMode || surveyState.awaitingMove;
@@ -1795,7 +1860,8 @@ const objList=document.getElementById('objList');
 const scopeRadios=[...document.querySelectorAll('input[name="styleScope"]')];
 function getId(f){ return f.id || (f.id=Math.random().toString(36).slice(2)); }
 function findFeatureById(fid){ return window.userFC.features.find(f=>getId(f)===fid); }
-function removeFeature(f){ const i=window.userFC.features.indexOf(f); if(i>-1){ userFC.features.splice(i,1); map.getSource('user-src').setData(window.userFC); refreshObjList(); } }
+function removeFeature(f){ const i=window.userFC.features.indexOf(f); if(i>-1){ userFC.features.splice(i,1); syncUserFeatures(); } }
+window.removeFeature = removeFeature;
 
 function refreshObjList(){
   objList.innerHTML='';
@@ -1834,7 +1900,7 @@ function makeObjItem(f){
       title:'ラベル編集',
       onApply:()=>{
         label.textContent=makeLabelText();
-        map.getSource('user-src').setData(window.userFC);
+        syncUserFeatures({refreshList:false});
       }
     });
   };
@@ -1871,7 +1937,7 @@ function makeObjItem(f){
       g.strokeWidth = Number(p.querySelector('#stWidth').value)||2;
       g.fill = p.querySelector('#stFill').value;
       g.fillOpacity = Number(p.querySelector('#stFillOp').value)||0.3;
-      map.getSource('user-src').setData(window.userFC);
+      syncUserFeatures({refreshList:false});
     };
     p.querySelector('#stClose').onclick=()=> p.remove();
   };
@@ -1935,8 +2001,7 @@ refreshObjList();
       if(error || !data) return;
       if(data.data?.features){
         window.userFC = data.data;
-        if(map.getSource('user-src')) map.getSource('user-src').setData(window.userFC);
-        refreshObjList?.();
+        syncUserFeatures();
       }
     }catch(e){ console.warn('loadUserData', e); }
   }
