@@ -503,6 +503,7 @@ input[type="number"]{ width:70px; }
     }catch(err){ console.warn('saveUserFCToStorage', err); }
   }
   let storedUserFC=loadStoredUserFC();
+  window.userFC = storedUserFC || { type:'FeatureCollection', features:[] };
 
   // 都道府県
   const PREFS=["北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県","茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県","新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県","静岡県","愛知県","三重県","滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県","鳥取県","島根県","岡山県","広島県","山口県","徳島県","香川県","愛媛県","高知県","福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"];
@@ -517,7 +518,12 @@ input[type="number"]{ width:70px; }
 
   const map = new maplibregl.Map({
     container:'map',
-    style:{ version:8, sources:{ base: BASE_SOURCES.osm }, layers:[{id:'base',type:'raster',source:'base',paint:{'raster-opacity':BASE_OPACITY}}] },
+    style:{
+      version:8,
+      glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+      sources:{ base: BASE_SOURCES.osm },
+      layers:[{id:'base',type:'raster',source:'base',paint:{'raster-opacity':BASE_OPACITY}}]
+    },
     center:[139.767,35.681], zoom:5.2
   });
 // 縮尺バー
@@ -812,7 +818,7 @@ async function readFGB_fromURL(url) {
           lat:Number(n.lat),
           text1:n.text1||'',
           text2:n.text2||'',
-          capTag=n.capTag||'',
+          capTag:n.capTag||'',
           labelText:n.labelText || buildNoteLabel(n)
         }));
       }
@@ -1627,7 +1633,6 @@ if (!map.getSource('gsi-photo')) {
 /* ==== /basemap & controls ==== */
 /* ==== user objects layers ==== */
 // ユーザー図形（グローバル）
-window.userFC = storedUserFC || { type:'FeatureCollection', features:[] };
 if (!map.getSource('user-src')){
   map.addSource('user-src', { type:'geojson', data:window.userFC });
 
@@ -1644,7 +1649,8 @@ if (!map.getSource('user-src')){
   });
   map.addLayer({ id:'user-line', type:'line', source:'user-src',
     filter:['==',['get','_type'],'line'],
-    paint:{ 'line-color':['coalesce',['get','lineColor'],'#e53935'],'line-width':['coalesce',['get','lineWidth'],2],'line-cap':'round','line-join':'round' }
+    layout:{ 'line-cap':'round','line-join':'round' },
+    paint:{ 'line-color':['coalesce',['get','lineColor'],'#e53935'],'line-width':['coalesce',['get','lineWidth'],2] }
   });
   map.addLayer({ id:'user-line-label', type:'symbol', source:'user-src',
     filter:['==',['get','_type'],'line'],
@@ -1665,7 +1671,7 @@ if (!map.getSource('user-src')){
     layout:{
       'text-field':["case",
         ["==",["get","_type"],"circle"],["coalesce",["get","label"],""],
-        ["all",["!has","label1"],["!has","label2"]],"",
+        ["all",["!",["has","label1"]],["!",["has","label2"]]],"",
         ["all",["has","label1"],["has","label2"]],["concat",["get","label1"],"\n",["get","label2"]],
         ["has","label1"],["get","label1"],
         ["has","label2"],["get","label2"],
@@ -1953,20 +1959,32 @@ function makeObjItem(f){
 refreshObjList();
 /* ==== /object tools & list ==== */
 </script>
-<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 <script>
-  // ★ここにあなたの設定を入れてください
-  const SUPABASE_URL = '';        // 例: 'https://xxxxx.supabase.co'
-  const SUPABASE_ANON_KEY = '';   // anon public key
+  // ★ここにあなたの設定を入れてください（上部スクリプトの window.__supa を利用 / 未設定時は以下を使用）
+  const SUPABASE_FALLBACK_URL = '';        // 例: 'https://xxxxx.supabase.co'
+  const SUPABASE_FALLBACK_ANON_KEY = '';   // anon public key
   let sb = null, sbUser = null;
 
   (async function initAuth(){
-    if(!SUPABASE_URL || !SUPABASE_ANON_KEY) return; // 未設定なら何もしない
-    sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    const { data:{ user } } = await sb.auth.getUser();
-    sbUser = user || null;
+    if(window.__supa && typeof window.__supa.auth?.getUser === 'function'){
+      sb = window.__supa;
+    }else if(SUPABASE_FALLBACK_URL && SUPABASE_FALLBACK_ANON_KEY && window.supabase){
+      sb = window.supabase.createClient(SUPABASE_FALLBACK_URL, SUPABASE_FALLBACK_ANON_KEY);
+      window.__supa = sb;
+    }else{
+      updateSignUI();
+      return; // Supabase 未設定
+    }
+
+    try{
+      const { data:{ user } = {} } = await sb.auth.getUser();
+      sbUser = user || null;
+    }catch(e){
+      console.warn('initAuth', e);
+      sbUser = null;
+    }
     updateSignUI();
-    if(sbUser) await loadUserData();
+    if(sbUser && sb.from) await loadUserData();
   })();
 
   function updateSignUI(){
@@ -1978,7 +1996,7 @@ refreshObjList();
 
   $('btnSignIn')?.addEventListener('click', async ()=>{
     const email = prompt('メールアドレスを入力してください');
-    if(!email || !sb) return;
+    if(!email || !sb?.auth?.signInWithOtp) return;
     const { error } = await sb.auth.signInWithOtp({ email, options:{ emailRedirectTo: location.href }});
     if(error) alert('送信に失敗しました: '+error.message);
     else alert('メールを送信しました。届いたリンクから開いてください。');
@@ -1997,6 +2015,7 @@ refreshObjList();
     try{
       const uid = new URL(location.href).searchParams.get('uid') || sbUser?.id;
       if(!uid) return;
+      if(!sb?.from) return;
       const { data, error } = await sb.from('user_maps').select('data').eq('user_id', uid).single();
       if(error || !data) return;
       if(data.data?.features){
@@ -2008,7 +2027,7 @@ refreshObjList();
 
   // 変更のたび自動保存
   async function autoSave(){
-    if(!sb || !sbUser) return;
+    if(!sb || !sbUser || !sb.from) return;
     try{
       const rec = { user_id: sbUser.id, data: window.userFC, updated_at: new Date().toISOString() };
       await sb.from('user_maps').upsert(rec, { onConflict:'user_id' });
