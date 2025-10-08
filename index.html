@@ -642,6 +642,10 @@ input[type="number"]{ width:70px; }
       $('polyLabelInput2').value=props.label2||'';
     }
     centerPanel(polygonLabelPanel);
+    requestAnimationFrame(()=>{
+      const input=$('polyLabelInput1');
+      if(input){ input.focus(); input.select(); }
+    });
   }
   function closePolygonLabel(apply){
     if(polygonLabelTarget && apply){
@@ -710,11 +714,11 @@ input[type="number"]{ width:70px; }
   };
   const BASE_OPACITY = 0.75;
 
-  const map = new maplibregl.Map({
-    container:'map',
-    style:{
-      version:8,
-      glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+const map = new maplibregl.Map({
+  container:'map',
+  style:{
+    version:8,
+    glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
       sources:{ base: BASE_SOURCES.osm },
       layers:[{id:'base',type:'raster',source:'base',paint:{'raster-opacity':BASE_OPACITY}}]
     },
@@ -722,6 +726,8 @@ input[type="number"]{ width:70px; }
   });
 // 縮尺バー
 map.addControl(new maplibregl.ScaleControl({maxWidth:140, unit:'metric'}), 'bottom-left');
+
+map.on('styledata', ensureUserPointPushpinIcon);
 
 // 現在地（MapLibre 組み込み）
 const geoControl = new maplibregl.GeolocateControl({ positionOptions:{ enableHighAccuracy:true }, trackUserLocation:true, showUserHeading:true });
@@ -742,7 +748,7 @@ geoControl.on('geolocate', (pos)=>{
 
 const overlayLayerOrder=[
   'user-temp-fill','user-temp-line',
-  'user-poly-fill','user-poly-line','user-line','user-line-label','user-poly-label',
+  'user-poly-fill','user-poly-line','user-line','user-line-label','user-poly-label','user-circle-label',
   'user-point-emoji','user-point-label',
   'survey-track-line','survey-track-points',
   'survey-notes-icon','survey-notes-label'
@@ -783,6 +789,32 @@ function ensureSurveyFlagIcon(){
   }catch(err){
     if(!(err && typeof err.message==='string' && err.message.includes('already exists'))){
       console.warn('ensureSurveyFlagIcon', err);
+    }
+  }
+}
+
+function ensureUserPointPushpinIcon(){
+  if(typeof map==='undefined' || !map || typeof map.hasImage!=='function') return;
+  if(map.hasImage('user-point-pushpin')) return;
+  const baseSize=64;
+  const ratio=Math.max(1, Math.min(3, window.devicePixelRatio||1));
+  const canvas=document.createElement('canvas');
+  canvas.width=baseSize*ratio;
+  canvas.height=baseSize*ratio;
+  const ctx=canvas.getContext('2d');
+  if(!ctx) return;
+  ctx.scale(ratio,ratio);
+  ctx.clearRect(0,0,baseSize,baseSize);
+  ctx.textAlign='center';
+  ctx.textBaseline='middle';
+  ctx.font=`${Math.round(baseSize*0.78)}px "Noto Color Emoji","Segoe UI Emoji","Apple Color Emoji",system-ui`;
+  ctx.fillText('📍', baseSize/2, baseSize/2 + baseSize*0.04);
+  try{
+    const data=ctx.getImageData(0,0,canvas.width,canvas.height);
+    map.addImage('user-point-pushpin',{width:canvas.width,height:canvas.height,data:data.data},{pixelRatio:ratio});
+  }catch(err){
+    if(!(err && typeof err.message==='string' && err.message.includes('already exists'))){
+      console.warn('ensureUserPointPushpinIcon', err);
     }
   }
 }
@@ -1785,16 +1817,17 @@ if (!map.getSource('gsi-photo')) {
 if (!map.getSource('user-src')){
   map.addSource('user-src', { type:'geojson', data:window.userFC });
 
+  ensureUserPointPushpinIcon();
   map.addLayer({ id:'user-point-emoji', type:'symbol', source:'user-src',
     filter:['==',['get','_type'],'point'],
-    layout:{ 'text-field':'📍','text-size':28,'text-anchor':'bottom','text-offset':[0,-0.05],'text-allow-overlap':true },
-    paint:{ 'text-halo-color':'#fff','text-halo-width':0 }
+    layout:{ 'icon-image':'user-point-pushpin','icon-size':0.5,'icon-anchor':'bottom','icon-offset':[0,-4],'icon-allow-overlap':true },
+    paint:{}
   });
   map.addLayer({ id:'user-point-label', type:'symbol', source:'user-src',
     filter:['==',['get','_type'],'point'],
-    layout:{ 'text-field':['coalesce',['get','label'],''],'text-size':['coalesce',['get','labelSize'],12],
-      'text-anchor':'top','text-offset':[0,0.6],'text-allow-overlap':true },
-    paint:{ 'text-color':['coalesce',['get','labelColor'],'#1f2d3d'],'text-halo-color':'#fff','text-halo-width':1.6 }
+    layout:{ 'text-field':['coalesce',['get','label'],''],'text-size':['+', ['coalesce',['get','labelSize'],12], 5],
+      'text-anchor':'top','text-offset':[0,0.7],'text-allow-overlap':true },
+    paint:{ 'text-color':['coalesce',['get','labelColor'],'#000000'],'text-halo-color':'#fff','text-halo-width':1.6 }
   });
   map.addLayer({ id:'user-line', type:'line', source:'user-src',
     filter:['==',['get','_type'],'line'],
@@ -1803,9 +1836,9 @@ if (!map.getSource('user-src')){
   });
   map.addLayer({ id:'user-line-label', type:'symbol', source:'user-src',
     filter:['==',['get','_type'],'line'],
-    layout:{ 'symbol-placement':'line-center','text-field':['coalesce',['get','label'],''],'text-size':12,
-      'text-allow-overlap':true },
-    paint:{ 'text-color':['coalesce',['get','labelColor'],'#1f2d3d'],'text-halo-color':'#fff','text-halo-width':1.6 }
+    layout:{ 'symbol-placement':'line','text-field':['coalesce',['get','label'],''],'text-size':['+', ['coalesce',['get','labelSize'],12], 5],
+      'text-rotation-alignment':'map','text-keep-upright':false,'text-allow-overlap':false },
+    paint:{ 'text-color':['coalesce',['get','labelColor'],'#000000'],'text-halo-color':'#fff','text-halo-width':1.6 }
   });
   map.addLayer({ id:'user-poly-fill', type:'fill', source:'user-src',
     filter:['in',['get','_type'],['literal',['polygon','circle']]],
@@ -1816,22 +1849,34 @@ if (!map.getSource('user-src')){
     paint:{ 'line-color':['coalesce',['get','lineColor'],'#2e7d32'],'line-width':['coalesce',['get','lineWidth'],2] }
   });
   map.addLayer({ id:'user-poly-label', type:'symbol', source:'user-src',
-    filter:['in',['get','_type'],['literal',['polygon','circle']]],
+    filter:['==',['get','_type'],'polygon'],
     layout:{
       'text-field':["case",
-        ["==",["get","_type"],"circle"],["coalesce",["get","label"],""],
         ["all",["!",["has","label1"]],["!",["has","label2"]]],"",
         ["all",["has","label1"],["has","label2"]],["concat",["get","label1"],"\n",["get","label2"]],
         ["has","label1"],["get","label1"],
         ["has","label2"],["get","label2"],
         ""
       ],
-      'text-size':12,
+      'text-size':17,
       'text-anchor':'center',
       'text-offset':[0,0],
-      'text-allow-overlap':true
+      'text-justify':'center',
+      'text-allow-overlap':false
     },
-    paint:{ 'text-color':['coalesce',['get','labelColor'],'#1f2d3d'],'text-halo-color':'#fff','text-halo-width':1.6 }
+    paint:{ 'text-color':['coalesce',['get','labelColor'],'#000000'],'text-halo-color':'#fff','text-halo-width':1.6 }
+  });
+  map.addLayer({ id:'user-circle-label', type:'symbol', source:'user-src',
+    filter:['==',['get','_type'],'circle'],
+    layout:{
+      'text-field':['coalesce',['get','label'],''],
+      'text-size':['+', ['coalesce',['get','labelSize'],12], 5],
+      'text-anchor':'center',
+      'text-offset':[0,0],
+      'text-justify':'center',
+      'text-allow-overlap':false
+    },
+    paint:{ 'text-color':['coalesce',['get','labelColor'],'#000000'],'text-halo-color':'#fff','text-halo-width':1.6 }
   });
 
   map.addSource('user-temp', { type:'geojson', data:{ type:'FeatureCollection', features:[] }});
@@ -1860,8 +1905,8 @@ if (!map.getSource('user-src')){
     }
   });
   map.addLayer({ id:'survey-notes-label', type:'symbol', source:'survey-notes',
-    layout:{ 'text-field':['get','labelText'],'text-size':12,'text-anchor':'top','text-offset':[0,0.4],'text-allow-overlap':true,'visibility':'none' },
-    paint:{ 'text-color':'#111827','text-halo-color':'#fff','text-halo-width':1.6 } });
+    layout:{ 'text-field':['get','labelText'],'text-size':17,'text-anchor':'top','text-offset':[0,0.45],'text-allow-overlap':true,'visibility':'none' },
+    paint:{ 'text-color':'#000000','text-halo-color':'#fff','text-halo-width':1.6 } });
   ensureOverlayOrder();
 }
 /* ==== /user objects layers ==== */
