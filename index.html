@@ -598,9 +598,9 @@ input[type="number"]{ width:70px; }
   }
   function closeSimpleLabel(apply){
     const ctx=simpleLabelContext;
+    if(simpleLabelPanel) simpleLabelPanel.style.display='none';
+    detachSimpleLabelPosition();
     if(!ctx.feature){
-      if(simpleLabelPanel) simpleLabelPanel.style.display='none';
-      detachSimpleLabelPosition();
       simpleLabelContext={ feature:null,isNew:false,resumeMode:null,onApply:null,anchor:null,positionMode:'anchor' };
       return;
     }
@@ -618,8 +618,6 @@ input[type="number"]{ width:70px; }
         if(typeof syncUserFeatures==='function') syncUserFeatures();
       }
     }
-    if(simpleLabelPanel) simpleLabelPanel.style.display='none';
-    detachSimpleLabelPosition();
     if(ctx.resumeMode && typeof activateTool==='function') activateTool(ctx.resumeMode);
     simpleLabelContext={ feature:null,isNew:false,resumeMode:null,onApply:null,anchor:null,positionMode:'anchor' };
     if(typeof updateMapCursor==='function') updateMapCursor();
@@ -653,6 +651,11 @@ input[type="number"]{ width:70px; }
       polygonLabelTarget.properties.label1=l1;
       polygonLabelTarget.properties.label2=l2;
       polygonLabelTarget.properties.label=[l1,l2].filter(Boolean).join(' / ');
+      const polyProps=polygonLabelTarget.properties;
+      if(!('fillColor' in polyProps)) polyProps.fillColor='#43a047';
+      if(!('fillOpacity' in polyProps)) polyProps.fillOpacity=0.5;
+      if(!('lineColor' in polyProps)) polyProps.lineColor='#2e7d32';
+      if(!('lineWidth' in polyProps)) polyProps.lineWidth=2;
       if(polygonIsNew){
         if(typeof window.pushFeature==='function') window.pushFeature(polygonLabelTarget);
         else if(window.userFC && Array.isArray(window.userFC.features)){ window.userFC.features.push(polygonLabelTarget); if(typeof syncUserFeatures==='function') syncUserFeatures(); }
@@ -1850,7 +1853,7 @@ if (!map.getSource('user-src')){
   map.addLayer({ id:'survey-notes-icon', type:'symbol', source:'survey-notes',
     layout:{
       'icon-image':'survey-flag',
-      'icon-size':0.8,
+      'icon-size':1.2,
       'icon-anchor':'bottom',
       'icon-allow-overlap':true,
       'icon-offset':[0,-4]
