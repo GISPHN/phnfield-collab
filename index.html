@@ -530,6 +530,9 @@ input[type="number"]{ width:70px; }
     if(!feature?.geometry) return null;
     const geom=feature.geometry;
     try{
+      if(feature?.properties && Array.isArray(feature.properties.circleCenter) && feature.properties.circleCenter.length>=2){
+        return feature.properties.circleCenter.slice(0,2);
+      }
       if(geom.type==='Point' && Array.isArray(geom.coordinates)){
         return geom.coordinates.slice();
       }
@@ -728,6 +731,7 @@ const map = new maplibregl.Map({
 map.addControl(new maplibregl.ScaleControl({maxWidth:140, unit:'metric'}), 'bottom-left');
 
 map.on('styledata', ensureUserPointPushpinIcon);
+map.on('styledata', ensureSurveyFlagIcon);
 
 // 現在地（MapLibre 組み込み）
 const geoControl = new maplibregl.GeolocateControl({ positionOptions:{ enableHighAccuracy:true }, trackUserLocation:true, showUserHeading:true });
@@ -1816,6 +1820,7 @@ if (!map.getSource('gsi-photo')) {
 // ユーザー図形（グローバル）
 if (!map.getSource('user-src')){
   map.addSource('user-src', { type:'geojson', data:window.userFC });
+  map.addSource('user-circle-labels', { type:'geojson', data:{ type:'FeatureCollection', features:[] } });
 
   ensureUserPointPushpinIcon();
   map.addLayer({ id:'user-point-emoji', type:'symbol', source:'user-src',
@@ -1827,7 +1832,7 @@ if (!map.getSource('user-src')){
     filter:['==',['get','_type'],'point'],
     layout:{ 'text-field':['coalesce',['get','label'],''],'text-size':['+', ['coalesce',['get','labelSize'],12], 5],
       'text-anchor':'top','text-offset':[0,0.7],'text-allow-overlap':true },
-    paint:{ 'text-color':['coalesce',['get','labelColor'],'#000000'],'text-halo-color':'#fff','text-halo-width':1.6 }
+    paint:{ 'text-color':'#000000','text-opacity':1,'text-halo-color':'#fff','text-halo-width':1.6 }
   });
   map.addLayer({ id:'user-line', type:'line', source:'user-src',
     filter:['==',['get','_type'],'line'],
@@ -1838,7 +1843,7 @@ if (!map.getSource('user-src')){
     filter:['==',['get','_type'],'line'],
     layout:{ 'symbol-placement':'line','text-field':['coalesce',['get','label'],''],'text-size':['+', ['coalesce',['get','labelSize'],12], 5],
       'text-rotation-alignment':'map','text-keep-upright':false,'text-allow-overlap':false },
-    paint:{ 'text-color':['coalesce',['get','labelColor'],'#000000'],'text-halo-color':'#fff','text-halo-width':1.6 }
+    paint:{ 'text-color':'#000000','text-opacity':1,'text-halo-color':'#fff','text-halo-width':1.6 }
   });
   map.addLayer({ id:'user-poly-fill', type:'fill', source:'user-src',
     filter:['in',['get','_type'],['literal',['polygon','circle']]],
@@ -1851,6 +1856,7 @@ if (!map.getSource('user-src')){
   map.addLayer({ id:'user-poly-label', type:'symbol', source:'user-src',
     filter:['==',['get','_type'],'polygon'],
     layout:{
+      'symbol-placement':'point',
       'text-field':["case",
         ["all",["!",["has","label1"]],["!",["has","label2"]]],"",
         ["all",["has","label1"],["has","label2"]],["concat",["get","label1"],"\n",["get","label2"]],
@@ -1864,19 +1870,19 @@ if (!map.getSource('user-src')){
       'text-justify':'center',
       'text-allow-overlap':false
     },
-    paint:{ 'text-color':['coalesce',['get','labelColor'],'#000000'],'text-halo-color':'#fff','text-halo-width':1.6 }
+    paint:{ 'text-color':'#000000','text-opacity':1,'text-halo-color':'#fff','text-halo-width':1.6 }
   });
-  map.addLayer({ id:'user-circle-label', type:'symbol', source:'user-src',
-    filter:['==',['get','_type'],'circle'],
+  map.addLayer({ id:'user-circle-label', type:'symbol', source:'user-circle-labels',
     layout:{
       'text-field':['coalesce',['get','label'],''],
       'text-size':['+', ['coalesce',['get','labelSize'],12], 5],
+      'symbol-placement':'point',
       'text-anchor':'center',
       'text-offset':[0,0],
       'text-justify':'center',
       'text-allow-overlap':false
     },
-    paint:{ 'text-color':['coalesce',['get','labelColor'],'#000000'],'text-halo-color':'#fff','text-halo-width':1.6 }
+    paint:{ 'text-color':'#000000','text-opacity':1,'text-halo-color':'#fff','text-halo-width':1.6 }
   });
 
   map.addSource('user-temp', { type:'geojson', data:{ type:'FeatureCollection', features:[] }});
@@ -1906,8 +1912,9 @@ if (!map.getSource('user-src')){
   });
   map.addLayer({ id:'survey-notes-label', type:'symbol', source:'survey-notes',
     layout:{ 'text-field':['get','labelText'],'text-size':17,'text-anchor':'top','text-offset':[0,0.45],'text-allow-overlap':true,'visibility':'none' },
-    paint:{ 'text-color':'#000000','text-halo-color':'#fff','text-halo-width':1.6 } });
+    paint:{ 'text-color':'#000000','text-opacity':1,'text-halo-color':'#fff','text-halo-width':1.6 } });
   ensureOverlayOrder();
+  updateCircleLabelSource();
 }
 /* ==== /user objects layers ==== */
 
@@ -1920,8 +1927,47 @@ if (!map.getSource('user-src')){
 /* ==== object tools & list ==== */
 let addMode=null, tempCoords=[], circleCenter=null;
 const setTemp = fc => map.getSource('user-temp').setData(fc || {type:'FeatureCollection',features:[]});
+function circleFeatureToLabelPoint(feature){
+  if(!feature || feature.type!=='Feature') return null;
+  const props=feature.properties||{};
+  if(props._type!=='circle') return null;
+  let center=null;
+  if(Array.isArray(props.circleCenter) && props.circleCenter.length>=2){
+    center=props.circleCenter.slice(0,2);
+  }else{
+    try{
+      const centerFeature=turf.center(feature);
+      if(centerFeature?.geometry?.type==='Point' && Array.isArray(centerFeature.geometry.coordinates)){
+        center=centerFeature.geometry.coordinates.slice(0,2);
+      }
+    }catch(err){ console.warn('circleFeatureToLabelPoint', err); }
+  }
+  if(!Array.isArray(center)) return null;
+  return {
+    type:'Feature',
+    properties:{
+      label: props.label || '',
+      labelSize: props.labelSize,
+      labelColor: props.labelColor
+    },
+    geometry:{ type:'Point', coordinates:center }
+  };
+}
+function updateCircleLabelSource(){
+  if(typeof map==='undefined' || !map || typeof map.getSource!=='function') return;
+  const src=map.getSource('user-circle-labels');
+  if(!src) return;
+  const features=[];
+  const userFeatures=window.userFC?.features || [];
+  userFeatures.forEach(f=>{
+    const labelFeature=circleFeatureToLabelPoint(f);
+    if(labelFeature) features.push(labelFeature);
+  });
+  src.setData({ type:'FeatureCollection', features });
+}
 function syncUserFeatures({refreshList=true}={}){
   if(map.getSource('user-src')) map.getSource('user-src').setData(window.userFC);
+  updateCircleLabelSource();
   if(refreshList) refreshObjList();
   saveUserFCToStorage(window.userFC);
 }
@@ -2023,7 +2069,8 @@ map.on('dblclick',(e)=>{
       return;
     }
     const poly=turf.circle(circleCenter,rKm,{steps:64,units:'kilometers'});
-    const feature={ type:'Feature', properties:{ _type:'circle' }, geometry:poly.geometry };
+    const centerCopy = circleCenter ? circleCenter.slice(0,2) : null;
+    const feature={ type:'Feature', properties:{ _type:'circle', circleCenter:centerCopy }, geometry:poly.geometry };
     circleCenter=null; setTemp();
     activateTool(null);
     openSimpleLabelEditor(feature,{ resumeMode:'circle', isNew:true, title:'円 ラベル' });
