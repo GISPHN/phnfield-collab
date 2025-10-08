@@ -753,7 +753,7 @@ geoControl.on('geolocate', (pos)=>{
 const overlayLayerOrder=[
   'user-temp-fill','user-temp-line',
   'user-poly-fill','user-poly-line','user-line','user-line-label','user-poly-label','user-circle-label',
-  'user-point-emoji','user-point-label',
+  'user-point-icon','user-point-label',
   'survey-track-line','survey-track-points',
   'survey-notes-icon','survey-notes-label'
 ];
@@ -799,6 +799,10 @@ function ensureSurveyFlagIcon(){
 
 function ensureUserPointPushpinIcon(){
   if(typeof map==='undefined' || !map || typeof map.hasImage!=='function') return;
+  if(typeof map.removeImage==='function' && map.hasImage('user-point-flag')){
+    try{ map.removeImage('user-point-flag'); }
+    catch(err){ console.warn('remove legacy user-point-flag image', err); }
+  }
   if(map.hasImage('user-point-pushpin')) return;
   const baseSize=64;
   const ratio=Math.max(1, Math.min(3, window.devicePixelRatio||1));
@@ -1823,7 +1827,11 @@ if (!map.getSource('user-src')){
   map.addSource('user-circle-labels', { type:'geojson', data:{ type:'FeatureCollection', features:[] } });
 
   ensureUserPointPushpinIcon();
-  map.addLayer({ id:'user-point-emoji', type:'symbol', source:'user-src',
+  if(map.getLayer('user-point-emoji')){
+    try{ map.removeLayer('user-point-emoji'); }
+    catch(err){ console.warn('remove legacy user-point-emoji layer', err); }
+  }
+  map.addLayer({ id:'user-point-icon', type:'symbol', source:'user-src',
     filter:['==',['get','_type'],'point'],
     layout:{ 'icon-image':'user-point-pushpin','icon-size':0.5,'icon-anchor':'bottom','icon-offset':[0,-4],'icon-allow-overlap':true },
     paint:{}
