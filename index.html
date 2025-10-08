@@ -1919,6 +1919,13 @@ if (!map.getSource('user-src')){
   <script>
 /* ==== object tools & list ==== */
 let addMode=null, tempCoords=[], circleCenter=null;
+const objToolbarBtn=document.getElementById('btnObj');
+const objSubtools=document.getElementById('objSubtools');
+const syncObjToolbar=open=>{
+  if(!objToolbarBtn || !objSubtools) return;
+  objSubtools.style.display=open?'flex':'none';
+  objToolbarBtn.classList.toggle('toggle-on', !!open);
+};
 const setTemp = fc => map.getSource('user-temp').setData(fc || {type:'FeatureCollection',features:[]});
 function syncUserFeatures({refreshList=true}={}){
   if(map.getSource('user-src')) map.getSource('user-src').setData(window.userFC);
@@ -1937,18 +1944,25 @@ function activateTool(mode){
   addMode=mode;
   tempCoords=[]; circleCenter=null; setTemp();
   document.querySelectorAll('#objSubtools .tool').forEach(t=>t.classList.toggle('active', !!mode && t.dataset.mode===mode));
+  if(mode){
+    syncObjToolbar(true);
+  }else{
+    syncObjToolbar(false);
+  }
   if(mode==='line' || mode==='polygon' || mode==='circle') map.doubleClickZoom.disable();
   else map.doubleClickZoom.enable();
   updateMapCursor();
 }
 
 // オブジェクト：メインボタン → サブツール開閉
-document.getElementById('btnObj').addEventListener('click', ()=>{
-  const sub=document.getElementById('objSubtools');
-  const now=sub.style.display==='flex';
-  sub.style.display = now ? 'none' : 'flex';
-  document.getElementById('btnObj').classList.toggle('toggle-on', !now);
-  if (now){ activateTool(null); }
+objToolbarBtn?.addEventListener('click', ()=>{
+  if(!objSubtools) return;
+  const isOpen=objSubtools.style.display==='flex';
+  const nextOpen=!isOpen;
+  syncObjToolbar(nextOpen);
+  if(!nextOpen){
+    activateTool(null);
+  }
 });
 // 各ツール選択
 document.querySelectorAll('#objSubtools .tool').forEach(btn=>{
