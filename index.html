@@ -151,6 +151,53 @@ input[type="number"]{ width:70px; }
 .floatBody{padding:10px 12px}
 .suggest{position:absolute;z-index:9999} /* 候補は最前面 */
 
+.labelBubble{
+  position:absolute;
+  z-index:60;
+  min-width:220px;
+  max-width:280px;
+  padding:10px 12px;
+  border-radius:10px;
+  background:rgba(255,255,255,.95);
+  box-shadow:0 10px 28px rgba(0,0,0,.18);
+  border:1px solid rgba(148,163,184,.45);
+  display:none;
+  pointer-events:auto;
+  transform:translate(-50%,-100%);
+}
+.labelBubble::after{
+  content:"";
+  position:absolute;
+  left:50%;
+  bottom:-8px;
+  transform:translateX(-50%);
+  border-width:8px 8px 0 8px;
+  border-style:solid;
+  border-color:rgba(255,255,255,.95) transparent transparent transparent;
+}
+.labelBubbleTitle{
+  font-size:13px;
+  font-weight:700;
+  margin-bottom:6px;
+}
+.labelBubbleActions{
+  display:flex;
+  gap:6px;
+  margin-top:8px;
+}
+.labelBubble input[type="text"]{
+  width:100%;
+  padding:6px 8px;
+  border:1px solid #d1d5db;
+  border-radius:8px;
+  font-size:13px;
+  box-sizing:border-box;
+}
+.labelBubble .btn{
+  padding:6px 10px;
+  font-size:12px;
+}
+
 .objItem{display:flex;align-items:center;gap:8px;padding:6px;border:1px solid #e5e7eb;border-radius:8px;margin:4px 0;background:rgba(255,255,255,.86);backdrop-filter:blur(4px)}
 .objItem .objLabel{flex:1 1 auto;cursor:default}
 .miniBtn{padding:4px 8px;border-radius:8px;border:none;background:#f3f4f6;cursor:pointer}
@@ -347,25 +394,6 @@ input[type="number"]{ width:70px; }
 </div>
 <!-- ▲ ラベル選択パネル ▲ -->
 
-<!-- ▼ ラベル入力パネル（ポイント/ライン/円） ▼ -->
-<div id="simpleLabelPanel" class="floating" style="display:none">
-  <div class="floatHeader"><span id="simpleLabelTitle">ラベル入力</span>
-    <span class="handle" title="ドラッグで移動">⣿</span>
-  </div>
-  <div class="floatBody">
-    <div class="group">
-      <input type="text" id="simpleLabelInput" placeholder="ラベル"/>
-    </div>
-    <div class="group">
-      <div class="row">
-        <button class="btn" id="simpleLabelConfirm">OK</button>
-        <button class="btn secondary" id="simpleLabelCancel">キャンセル</button>
-      </div>
-    </div>
-  </div>
-</div>
-<!-- ▲ ラベル入力パネル（ポイント/ライン/円） ▲ -->
-
 <!-- ▼ ポリゴン ラベル入力パネル ▼ -->
 <div id="polygonLabelPanel" class="floating" style="display:none">
   <div class="floatHeader">ポリゴン ラベル
@@ -388,6 +416,17 @@ input[type="number"]{ width:70px; }
 
     </div>
   </div>
+
+  <!-- ▼ オブジェクト ラベル入力バブル ▼ -->
+  <div id="simpleLabelPanel" class="labelBubble" style="display:none">
+    <div class="labelBubbleTitle" id="simpleLabelTitle">ラベル入力</div>
+    <input type="text" id="simpleLabelInput" placeholder="ラベル"/>
+    <div class="labelBubbleActions">
+      <button class="btn" id="simpleLabelConfirm">OK</button>
+      <button class="btn secondary" id="simpleLabelCancel">キャンセル</button>
+    </div>
+  </div>
+  <!-- ▲ オブジェクト ラベル入力バブル ▲ -->
 
   <!-- 右パネル -->
   <div class="rightpane">
@@ -485,13 +524,73 @@ input[type="number"]{ width:70px; }
   const simpleLabelPanel=$('simpleLabelPanel');
   const simpleLabelInput=$('simpleLabelInput');
   const simpleLabelTitle=$('simpleLabelTitle');
-  makeDraggable(simpleLabelPanel);
-  let simpleLabelContext={ feature:null,isNew:false,resumeMode:null,onApply:null };
+  const SIMPLE_LABEL_EVENTS=['move','moveend','zoom','rotate','pitch'];
+  let simpleLabelContext={ feature:null,isNew:false,resumeMode:null,onApply:null,anchor:null,positionMode:'anchor' };
+  function computeSimpleLabelAnchor(feature){
+    if(!feature?.geometry) return null;
+    const geom=feature.geometry;
+    try{
+      if(geom.type==='Point' && Array.isArray(geom.coordinates)){
+        return geom.coordinates.slice();
+      }
+      if(Array.isArray(geom.coordinates)){
+        if(!geom.coordinates.length) return null;
+        const bbox=turf.bbox(feature);
+        const midLng=(bbox[0]+bbox[2])/2;
+        const topLat=bbox[3];
+        return [midLng, topLat];
+      }
+    }catch(err){
+      console.warn('computeSimpleLabelAnchor', err);
+    }
+    return null;
+  }
+  function updateSimpleLabelPosition(){
+    if(!simpleLabelPanel || simpleLabelPanel.style.display==='none') return;
+    if(simpleLabelContext.positionMode==='center'){
+      simpleLabelPanel.style.left='50%';
+      simpleLabelPanel.style.top='50%';
+      simpleLabelPanel.style.transform='translate(-50%,-50%)';
+      return;
+    }
+    const anchor=simpleLabelContext.anchor;
+    if(!anchor) return;
+    if(typeof map==='undefined' || !map || typeof map.project!=='function') return;
+    const pt=map.project(anchor);
+    const offset=12;
+    simpleLabelPanel.style.left=`${pt.x}px`;
+    simpleLabelPanel.style.top=`${pt.y - offset}px`;
+    simpleLabelPanel.style.transform='translate(-50%,-100%)';
+  }
+  function attachSimpleLabelPosition(){
+    if(typeof map==='undefined' || !map) return;
+    SIMPLE_LABEL_EVENTS.forEach(evt=>map.on(evt, updateSimpleLabelPosition));
+    window.addEventListener('resize', updateSimpleLabelPosition);
+  }
+  function detachSimpleLabelPosition(){
+    if(typeof map!=='undefined' && map){
+      SIMPLE_LABEL_EVENTS.forEach(evt=>map.off(evt, updateSimpleLabelPosition));
+    }
+    window.removeEventListener('resize', updateSimpleLabelPosition);
+  }
   function openSimpleLabelEditor(feature,{resumeMode=null,isNew=false,onApply=null,title='ラベル入力'}={}){
-    simpleLabelContext={ feature, isNew, resumeMode, onApply };
+    detachSimpleLabelPosition();
+    simpleLabelContext={ feature, isNew, resumeMode, onApply, anchor:null, positionMode:'anchor' };
     if(simpleLabelTitle) simpleLabelTitle.textContent=title;
     if(simpleLabelInput) simpleLabelInput.value=feature?.properties?.label||'';
-    centerPanel(simpleLabelPanel);
+    simpleLabelContext.anchor=computeSimpleLabelAnchor(feature);
+    if(simpleLabelPanel){
+      if(simpleLabelContext.anchor){
+        simpleLabelContext.positionMode='anchor';
+        simpleLabelPanel.style.display='block';
+        updateSimpleLabelPosition();
+        attachSimpleLabelPosition();
+      }else{
+        simpleLabelContext.positionMode='center';
+        simpleLabelPanel.style.display='block';
+        updateSimpleLabelPosition();
+      }
+    }
     if(simpleLabelInput){
       simpleLabelInput.focus();
       simpleLabelInput.select();
@@ -499,7 +598,12 @@ input[type="number"]{ width:70px; }
   }
   function closeSimpleLabel(apply){
     const ctx=simpleLabelContext;
-    if(!ctx.feature){ if(simpleLabelPanel) simpleLabelPanel.style.display='none'; return; }
+    if(!ctx.feature){
+      if(simpleLabelPanel) simpleLabelPanel.style.display='none';
+      detachSimpleLabelPosition();
+      simpleLabelContext={ feature:null,isNew:false,resumeMode:null,onApply:null,anchor:null,positionMode:'anchor' };
+      return;
+    }
     if(apply){
       ctx.feature.properties=ctx.feature.properties||{};
       const labelVal=simpleLabelInput ? simpleLabelInput.value.trim() : '';
@@ -515,8 +619,9 @@ input[type="number"]{ width:70px; }
       }
     }
     if(simpleLabelPanel) simpleLabelPanel.style.display='none';
+    detachSimpleLabelPosition();
     if(ctx.resumeMode && typeof activateTool==='function') activateTool(ctx.resumeMode);
-    simpleLabelContext={ feature:null,isNew:false,resumeMode:null,onApply:null };
+    simpleLabelContext={ feature:null,isNew:false,resumeMode:null,onApply:null,anchor:null,positionMode:'anchor' };
     if(typeof updateMapCursor==='function') updateMapCursor();
   }
   $('simpleLabelConfirm')?.addEventListener('click',()=>closeSimpleLabel(true));
@@ -641,6 +746,42 @@ const overlayLayerOrder=[
 ];
 function ensureOverlayOrder(){
   overlayLayerOrder.forEach(id=>{ if(map.getLayer(id)) map.moveLayer(id); });
+}
+
+function ensureSurveyFlagIcon(){
+  if(typeof map==='undefined' || !map || typeof map.hasImage!=='function') return;
+  if(map.hasImage('survey-flag')) return;
+  const size=64;
+  const canvas=document.createElement('canvas');
+  canvas.width=size;
+  canvas.height=size;
+  const ctx=canvas.getContext('2d');
+  if(!ctx) return;
+  ctx.clearRect(0,0,size,size);
+  // pole shadow
+  ctx.fillStyle='rgba(15,23,42,0.12)';
+  ctx.beginPath();
+  ctx.ellipse(size*0.22, size*0.84, size*0.12, size*0.04, 0, 0, Math.PI*2);
+  ctx.fill();
+  // pole
+  ctx.fillStyle='#1f2937';
+  ctx.fillRect(size*0.18, size*0.16, size*0.08, size*0.68);
+  // flag cloth
+  ctx.fillStyle='#ef4444';
+  ctx.beginPath();
+  ctx.moveTo(size*0.26, size*0.2);
+  ctx.lineTo(size*0.78, size*0.32);
+  ctx.lineTo(size*0.26, size*0.44);
+  ctx.closePath();
+  ctx.fill();
+  try{
+    const data=ctx.getImageData(0,0,size,size);
+    map.addImage('survey-flag', { width:size, height:size, data:data.data }, { pixelRatio:2 });
+  }catch(err){
+    if(!(err && typeof err.message==='string' && err.message.includes('already exists'))){
+      console.warn('ensureSurveyFlagIcon', err);
+    }
+  }
 }
 
 
@@ -1705,9 +1846,16 @@ if (!map.getSource('user-src')){
     paint:{ 'circle-radius':4,'circle-color':'#1d4ed8','circle-stroke-color':'#fff','circle-stroke-width':1 } });
 
   map.addSource('survey-notes', { type:'geojson', data:{ type:'FeatureCollection', features:[] }});
+  ensureSurveyFlagIcon();
   map.addLayer({ id:'survey-notes-icon', type:'symbol', source:'survey-notes',
-    layout:{ 'text-field':'🚩','text-size':28,'text-anchor':'bottom','text-offset':[0,-0.05],'text-allow-overlap':true },
-    paint:{ 'text-halo-color':'#fff','text-halo-width':0 } });
+    layout:{
+      'icon-image':'survey-flag',
+      'icon-size':0.8,
+      'icon-anchor':'bottom',
+      'icon-allow-overlap':true,
+      'icon-offset':[0,-4]
+    }
+  });
   map.addLayer({ id:'survey-notes-label', type:'symbol', source:'survey-notes',
     layout:{ 'text-field':['get','labelText'],'text-size':12,'text-anchor':'top','text-offset':[0,0.4],'text-allow-overlap':true,'visibility':'none' },
     paint:{ 'text-color':'#111827','text-halo-color':'#fff','text-halo-width':1.6 } });
