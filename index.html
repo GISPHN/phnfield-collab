@@ -714,6 +714,92 @@ input[type="number"]{ width:70px; }
     if('labelSize' in props) props.labelSize=Number(props.labelSize)||defaults.labelSize;
   }
 
+  function computeLabelCoordinates(feature){
+    if(!feature?.geometry) return null;
+    const typ=feature?.properties?._type;
+    try{
+      if(typ==='line'){
+        if(feature.geometry.type==='LineString'){
+          const len=turf.length(feature,{units:'kilometers'});
+          if(len>0){
+            const mid=turf.along(feature,len/2,{units:'kilometers'});
+            if(mid?.geometry?.coordinates) return mid.geometry.coordinates;
+          }
+        }
+        const center=turf.centerOfMass(feature);
+        if(center?.geometry?.coordinates) return center.geometry.coordinates;
+      }else if(typ==='polygon' || typ==='circle'){
+        const center=turf.centerOfMass(feature);
+        if(center?.geometry?.coordinates) return center.geometry.coordinates;
+      }
+    }catch(err){ console.warn('label coordinate error', err); }
+    if(feature.geometry.type==='Point' && Array.isArray(feature.geometry.coordinates)){
+      return feature.geometry.coordinates;
+    }
+    if(feature.geometry.type==='LineString' && Array.isArray(feature.geometry.coordinates) && feature.geometry.coordinates.length){
+      return feature.geometry.coordinates[Math.floor(feature.geometry.coordinates.length/2)];
+    }
+    if((feature.geometry.type==='Polygon' || feature.geometry.type==='MultiLineString') && Array.isArray(feature.geometry.coordinates?.[0]) && feature.geometry.coordinates[0].length){
+      return feature.geometry.coordinates[0][0];
+    }
+    return null;
+  }
+
+  function buildLabelFeature(feature){
+    const typ=feature?.properties?._type;
+    if(!typ || typ==='point') return null;
+    const props=feature.properties||{};
+    const labelColor=props.labelColor || (STYLE_DEFAULTS[typ]?.labelColor ?? '#000000');
+    const rawSize=Number(props.labelSize);
+    const labelSize=Number.isFinite(rawSize) ? rawSize : (STYLE_DEFAULTS[typ]?.labelSize ?? 12);
+    let labelText='';
+    if(typ==='polygon'){
+      const line1=(props.label1||'').trim();
+      const line2=(props.label2||'').trim();
+      labelText=[line1,line2].filter(Boolean).join('\n');
+      if(!labelText){
+        labelText=(props.label||'').trim();
+        labelText=labelText.replace(' / ','\n');
+      }
+    }else{
+      labelText=(props.label||'').trim();
+    }
+    if(!labelText) return null;
+    const coords=computeLabelCoordinates(feature);
+    if(!coords) return null;
+    return {
+      type:'Feature',
+      properties:{
+        _labelType:typ,
+        labelText,
+        labelColor,
+        labelSize
+      },
+      geometry:{ type:'Point', coordinates:coords }
+    };
+  }
+
+  function buildUserLabelCollection(fc=window.userFC){
+    const features=[];
+    if(fc?.features?.length){
+      fc.features.forEach(f=>{
+        try{
+          ensureDefaultStyle(f);
+          const labelFeature=buildLabelFeature(f);
+          if(labelFeature) features.push(labelFeature);
+        }catch(err){ console.warn('build label feature failed', err); }
+      });
+    }
+    return { type:'FeatureCollection', features };
+  }
+
+  function syncUserLabelSource(){
+    window.userLabelFC=buildUserLabelCollection();
+    if(map?.getSource('user-labels')){
+      map.getSource('user-labels').setData(window.userLabelFC);
+    }
+  }
+
   const polygonLabelPanel=$('polygonLabelPanel');
   makeDraggable(polygonLabelPanel);
   let polygonLabelTarget=null;
@@ -2019,92 +2105,6 @@ const syncObjToolbar=open=>{
   objToolbarBtn.classList.toggle('toggle-on', !!open);
 };
 const setTemp = fc => map.getSource('user-temp').setData(fc || {type:'FeatureCollection',features:[]});
-function computeLabelCoordinates(feature){
-  if(!feature?.geometry) return null;
-  const typ=feature?.properties?._type;
-  try{
-    if(typ==='line'){
-      if(feature.geometry.type==='LineString'){
-        const len=turf.length(feature,{units:'kilometers'});
-        if(len>0){
-          const mid=turf.along(feature,len/2,{units:'kilometers'});
-          if(mid?.geometry?.coordinates) return mid.geometry.coordinates;
-        }
-      }
-      const center=turf.centerOfMass(feature);
-      if(center?.geometry?.coordinates) return center.geometry.coordinates;
-    }else if(typ==='polygon' || typ==='circle'){
-      const center=turf.centerOfMass(feature);
-      if(center?.geometry?.coordinates) return center.geometry.coordinates;
-    }
-  }catch(err){ console.warn('label coordinate error', err); }
-  if(feature.geometry.type==='Point' && Array.isArray(feature.geometry.coordinates)){
-    return feature.geometry.coordinates;
-  }
-  if(feature.geometry.type==='LineString' && Array.isArray(feature.geometry.coordinates) && feature.geometry.coordinates.length){
-    return feature.geometry.coordinates[Math.floor(feature.geometry.coordinates.length/2)];
-  }
-  if((feature.geometry.type==='Polygon' || feature.geometry.type==='MultiLineString') && Array.isArray(feature.geometry.coordinates?.[0]) && feature.geometry.coordinates[0].length){
-    return feature.geometry.coordinates[0][0];
-  }
-  return null;
-}
-
-function buildLabelFeature(feature){
-  const typ=feature?.properties?._type;
-  if(!typ || typ==='point') return null;
-  const props=feature.properties||{};
-  const labelColor=props.labelColor || (STYLE_DEFAULTS[typ]?.labelColor ?? '#000000');
-  const rawSize=Number(props.labelSize);
-  const labelSize=Number.isFinite(rawSize) ? rawSize : (STYLE_DEFAULTS[typ]?.labelSize ?? 12);
-  let labelText='';
-  if(typ==='polygon'){
-    const line1=(props.label1||'').trim();
-    const line2=(props.label2||'').trim();
-    labelText=[line1,line2].filter(Boolean).join('\n');
-    if(!labelText){
-      labelText=(props.label||'').trim();
-      labelText=labelText.replace(' / ','\n');
-    }
-  }else{
-    labelText=(props.label||'').trim();
-  }
-  if(!labelText) return null;
-  const coords=computeLabelCoordinates(feature);
-  if(!coords) return null;
-  return {
-    type:'Feature',
-    properties:{
-      _labelType:typ,
-      labelText,
-      labelColor,
-      labelSize
-    },
-    geometry:{ type:'Point', coordinates:coords }
-  };
-}
-
-function buildUserLabelCollection(fc=window.userFC){
-  const features=[];
-  if(fc?.features?.length){
-    fc.features.forEach(f=>{
-      try{
-        ensureDefaultStyle(f);
-        const labelFeature=buildLabelFeature(f);
-        if(labelFeature) features.push(labelFeature);
-      }catch(err){ console.warn('build label feature failed', err); }
-    });
-  }
-  return { type:'FeatureCollection', features };
-}
-
-function syncUserLabelSource(){
-  window.userLabelFC=buildUserLabelCollection();
-  if(map?.getSource('user-labels')){
-    map.getSource('user-labels').setData(window.userLabelFC);
-  }
-}
-
 function syncUserFeatures({refreshList=true}={}){
   ensureGroupStore();
   cleanupGroupStore();
