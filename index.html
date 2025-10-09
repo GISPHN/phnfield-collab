@@ -110,6 +110,28 @@
 .type-circle{ background:#6d4c41; opacity:.6; border-radius:50%; }
 .dropHint{ outline:2px dashed #1e88e5; }
 
+.objLabelWrap{ flex:1 1 auto; min-width:0; }
+.objLabelText{ display:block; cursor:text; font-size:13px; }
+.objLabelText.empty{ color:#9ca3af; font-style:italic; }
+.objActions{ display:flex; gap:4px; align-items:center; }
+.iconBtn{
+  border:none; background:transparent; cursor:pointer; padding:2px 4px; border-radius:6px;
+  font-size:16px; line-height:1; transition:background .2s;
+}
+.iconBtn:hover{ background:#e5e7eb; }
+.iconBtn.danger:hover{ background:#fee2e2; }
+.grpHeader{ display:flex; align-items:center; gap:8px; width:100%; }
+.grpChildren{ margin-top:6px; padding-left:28px; display:flex; flex-direction:column; }
+.labelInlineInput{
+  width:100%; padding:4px 6px; border:1px solid #d1d5db; border-radius:6px; font-size:13px;
+  box-sizing:border-box;
+}
+.polyInlineEditor{ display:flex; flex-direction:column; gap:4px; margin-top:6px; }
+.polyInlineEditor input{ padding:4px 6px; border:1px solid #d1d5db; border-radius:6px; font-size:13px; }
+.polyInlineEditor .btnRow{ display:flex; gap:6px; justify-content:flex-end; }
+.polyInlineEditor button{ padding:4px 10px; border-radius:6px; border:1px solid #d1d5db; background:#f3f4f6; cursor:pointer; font-size:12px; }
+.polyInlineEditor button.primary{ background:#1e88e5; color:#fff; border-color:#1e88e5; }
+
 /* ラベル入力と色・サイズUI */
 .inline{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .small{ font-size:12px; color:#666; }
@@ -431,12 +453,11 @@ input[type="number"]{ width:70px; }
   <!-- 右パネル -->
   <div class="rightpane">
 <div id="objPanel">
-  <div class="inline small" style="margin-bottom:6px">
+  <div class="inline small" style="margin-bottom:6px; align-items:center;">
     <strong>オブジェクト一覧</strong>
     <span style="margin-left:auto"></span>
-    <label><input type="radio" name="styleScope" value="single" checked> 個別</label>
-    <label><input type="radio" name="styleScope" value="group"> グループ</label>
-    <label><input type="radio" name="styleScope" value="all"> 全体</label>
+    <button class="iconBtn" id="objListPalette" title="すべてのオブジェクトの色や大きさを変更">🎨</button>
+    <button class="iconBtn danger" id="objListTrash" title="すべてのオブジェクトを削除">🗑️</button>
   </div>
   <div id="objList"></div>
 </div>
@@ -608,6 +629,7 @@ input[type="number"]{ width:70px; }
       ctx.feature.properties=ctx.feature.properties||{};
       const labelVal=simpleLabelInput ? simpleLabelInput.value.trim() : '';
       ctx.feature.properties.label=labelVal;
+      ensureDefaultStyle(ctx.feature);
       if(typeof ctx.onApply==='function'){
         ctx.onApply(ctx.feature);
       }else if(ctx.isNew){
@@ -626,6 +648,38 @@ input[type="number"]{ width:70px; }
   $('simpleLabelCancel')?.addEventListener('click',()=>closeSimpleLabel(false));
   simpleLabelInput?.addEventListener('keydown',ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); closeSimpleLabel(true); } });
   window.openSimpleLabelEditor=openSimpleLabelEditor;
+
+  const STYLE_DEFAULTS={
+    point:{ labelColor:'#000000', labelSize:12 },
+    line:{ lineColor:'#e53935', lineWidth:2, labelColor:'#000000', labelSize:12 },
+    polygon:{ fillColor:'#43a047', fillOpacity:0.5, lineColor:'#2e7d32', lineWidth:2, labelColor:'#000000', labelSize:12 },
+    circle:{ fillColor:'#6d4c41', fillOpacity:0.5, lineColor:'#4e342e', lineWidth:2, labelColor:'#000000', labelSize:12 }
+  };
+  function ensureDefaultStyle(feature){
+    if(!feature || typeof feature!=='object') return;
+    feature.properties=feature.properties||{};
+    const props=feature.properties;
+    const typ=props._type;
+    if(!typ || !STYLE_DEFAULTS[typ]) return;
+    const defaults=STYLE_DEFAULTS[typ];
+    Object.keys(defaults).forEach(key=>{
+      if(!(key in props)) props[key]=defaults[key];
+    });
+    if(typ==='polygon' || typ==='circle'){
+      if(!('fillColor' in props)) props.fillColor=defaults.fillColor;
+      if(!('fillOpacity' in props)) props.fillOpacity=defaults.fillOpacity;
+    }
+    if(typ==='line' || typ==='polygon' || typ==='circle'){
+      if(!('lineColor' in props)) props.lineColor=defaults.lineColor;
+      if(!('lineWidth' in props)) props.lineWidth=defaults.lineWidth;
+    }
+    // 旧プロパティとの互換
+    if('lineColor' in props) props.stroke=props.lineColor;
+    if('lineWidth' in props) props.strokeWidth=props.lineWidth;
+    if('fillColor' in props) props.fill=props.fillColor;
+    if('fillOpacity' in props) props.fillOpacity=Number(props.fillOpacity);
+    if('labelSize' in props) props.labelSize=Number(props.labelSize)||defaults.labelSize;
+  }
 
   const polygonLabelPanel=$('polygonLabelPanel');
   makeDraggable(polygonLabelPanel);
@@ -660,6 +714,7 @@ input[type="number"]{ width:70px; }
       if(!('fillOpacity' in polyProps)) polyProps.fillOpacity=0.5;
       if(!('lineColor' in polyProps)) polyProps.lineColor='#2e7d32';
       if(!('lineWidth' in polyProps)) polyProps.lineWidth=2;
+      ensureDefaultStyle(polygonLabelTarget);
       if(polygonIsNew){
         if(typeof window.pushFeature==='function') window.pushFeature(polygonLabelTarget);
         else if(window.userFC && Array.isArray(window.userFC.features)){ window.userFC.features.push(polygonLabelTarget); if(typeof syncUserFeatures==='function') syncUserFeatures(); }
@@ -702,6 +757,10 @@ input[type="number"]{ width:70px; }
   }
   let storedUserFC=loadStoredUserFC();
   window.userFC = storedUserFC || { type:'FeatureCollection', features:[] };
+  if(!window.userFC.features) window.userFC.features=[];
+  if(!window.userFC.groups || typeof window.userFC.groups!=='object') window.userFC.groups={};
+  if(typeof window.userFC._groupSeq!=='number') window.userFC._groupSeq=1;
+  window.userFC.features.forEach(f=>{ try{ ensureDefaultStyle(f); }catch(_){} });
 
   // 都道府県
   const PREFS=["北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県","茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県","新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県","静岡県","愛知県","三重県","滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県","鳥取県","島根県","岡山県","広島県","山口県","徳島県","香川県","愛媛県","高知県","福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"];
@@ -1836,8 +1895,9 @@ if (!map.getSource('user-src')){
   });
   map.addLayer({ id:'user-line-label', type:'symbol', source:'user-src',
     filter:['==',['get','_type'],'line'],
-    layout:{ 'symbol-placement':'line','text-field':['coalesce',['get','label'],''],'text-size':['+', ['coalesce',['get','labelSize'],12], 5],
-      'text-rotation-alignment':'map','text-keep-upright':false,'text-allow-overlap':false },
+    layout:{ 'symbol-placement':'line-center','text-field':['coalesce',['get','label'],''],
+      'text-size':['+', ['coalesce',['get','labelSize'],12], 5],
+      'text-rotation-alignment':'viewport','text-allow-overlap':false },
     paint:{ 'text-color':['coalesce',['get','labelColor'],'#000000'],'text-halo-color':'#fff','text-halo-width':1.6 }
   });
   map.addLayer({ id:'user-poly-fill', type:'fill', source:'user-src',
@@ -1858,7 +1918,7 @@ if (!map.getSource('user-src')){
         ["has","label2"],["get","label2"],
         ""
       ],
-      'text-size':17,
+      'text-size':['+', ['coalesce',['get','labelSize'],12], 5],
       'text-anchor':'center',
       'text-offset':[0,0],
       'text-justify':'center',
@@ -1883,6 +1943,7 @@ if (!map.getSource('user-src')){
   map.addLayer({ id:'user-temp-line', type:'line', source:'user-temp',
     paint:{ 'line-color':'#1976d2','line-width':2,'line-dasharray':[1,1] }});
   map.addLayer({ id:'user-temp-fill', type:'fill', source:'user-temp',
+    layout:{ 'visibility':'none' },
     paint:{ 'fill-color':'#1976d2','fill-opacity':0.2 }});
 
   map.addSource('survey-track', { type:'geojson', data:{ type:'FeatureCollection', features:[] }});
@@ -1928,11 +1989,18 @@ const syncObjToolbar=open=>{
 };
 const setTemp = fc => map.getSource('user-temp').setData(fc || {type:'FeatureCollection',features:[]});
 function syncUserFeatures({refreshList=true}={}){
+  ensureGroupStore();
+  cleanupGroupStore();
   if(map.getSource('user-src')) map.getSource('user-src').setData(window.userFC);
   if(refreshList) refreshObjList();
   saveUserFCToStorage(window.userFC);
+  if(typeof autoSave==='function') autoSave();
 }
-const pushFeature = f => { window.userFC.features.push(f); syncUserFeatures(); };
+const pushFeature = f => {
+  ensureDefaultStyle(f);
+  window.userFC.features.push(f);
+  syncUserFeatures();
+};
 window.pushFeature = pushFeature;
 function updateMapCursor(){
   const canvas=map.getCanvas();
@@ -1943,6 +2011,10 @@ function updateMapCursor(){
 function activateTool(mode){
   addMode=mode;
   tempCoords=[]; circleCenter=null; setTemp();
+  if(map && map.getLayer('user-temp-fill')){
+    const vis=(mode==='polygon'||mode==='circle')?'visible':'none';
+    try{ map.setLayoutProperty('user-temp-fill','visibility',vis); }catch(_){ }
+  }
   document.querySelectorAll('#objSubtools .tool').forEach(t=>t.classList.toggle('active', !!mode && t.dataset.mode===mode));
   if(mode){
     syncObjToolbar(true);
@@ -2080,101 +2152,637 @@ map.on('mouseleave','survey-notes-icon',()=>{ if(typeof updateMapCursor==='funct
 
 // 右パネル：リスト＆グループ＆スタイル
 const objList=document.getElementById('objList');
-const scopeRadios=[...document.querySelectorAll('input[name="styleScope"]')];
+const objListPaletteBtn=document.getElementById('objListPalette');
+const objListTrashBtn=document.getElementById('objListTrash');
+
 function getId(f){ return f.id || (f.id=Math.random().toString(36).slice(2)); }
 function findFeatureById(fid){ return window.userFC.features.find(f=>getId(f)===fid); }
-function removeFeature(f){ const i=window.userFC.features.indexOf(f); if(i>-1){ userFC.features.splice(i,1); syncUserFeatures(); } }
-window.removeFeature = removeFeature;
 
-function refreshObjList(){
-  objList.innerHTML='';
-  const groups={}, orphans=[];
-  for (const f of window.userFC.features){ const g=f.properties._group; g ? (groups[g]??=({id:g,items:[]})).items.push(f) : orphans.push(f); }
-  orphans.forEach(f=> objList.appendChild(makeObjItem(f)));
-  Object.values(groups).forEach(g=>{
-    const box=document.createElement('div'); box.className='grpItem'; box.draggable=true; box.dataset.gid=g.id;
-    box.innerHTML=`<div class="objType type-poly"></div><strong>グループ</strong>`;
-    const wrap=document.createElement('div'); wrap.style.marginTop='4px'; g.items.forEach(f=> wrap.appendChild(makeObjItem(f)));
-    box.appendChild(wrap); addDnD(box,'group'); objList.appendChild(box);
+function ensureGroupStore(){
+  if(!window.userFC) window.userFC={ type:'FeatureCollection', features:[], groups:{}, _groupSeq:1 };
+  if(!Array.isArray(window.userFC.features)) window.userFC.features=[];
+  if(!window.userFC.groups || typeof window.userFC.groups!=='object') window.userFC.groups={};
+  if(typeof window.userFC._groupSeq!=='number') window.userFC._groupSeq=1;
+  return window.userFC.groups;
+}
+function cleanupEmptyGroup(groupId){
+  if(!groupId) return;
+  const groups=ensureGroupStore();
+  const exists=window.userFC.features.some(f=>f?.properties?._group===groupId);
+  if(!exists) delete groups[groupId];
+}
+function cleanupGroupStore(){
+  const groups=ensureGroupStore();
+  const used=new Set();
+  window.userFC.features.forEach(f=>{
+    const gid=f?.properties?._group;
+    if(gid) used.add(gid);
+  });
+  Object.keys(groups).forEach(id=>{ if(!used.has(id)) delete groups[id]; });
+}
+function nextGroupName(){
+  ensureGroupStore();
+  const seq=window.userFC._groupSeq||1;
+  window.userFC._groupSeq=seq+1;
+  return `グループ${seq}`;
+}
+function getGroupMeta(id){
+  const groups=ensureGroupStore();
+  if(!groups[id]) groups[id]={id,name:nextGroupName()};
+  if(!groups[id].name) groups[id].name=nextGroupName();
+  return groups[id];
+}
+function createGroupFromFeatures(features,{name}={}){
+  const groups=ensureGroupStore();
+  const uniq=[];
+  features.forEach(f=>{ if(f && f.properties && !uniq.includes(f)) uniq.push(f); });
+  if(!uniq.length) return null;
+  const id='grp_'+Math.random().toString(36).slice(2);
+  const groupName=name || nextGroupName();
+  groups[id]={id,name:groupName};
+  const touched=new Set();
+  uniq.forEach(f=>{
+    const prev=f.properties._group;
+    f.properties._group=id;
+    if(prev && prev!==id) touched.add(prev);
+  });
+  touched.forEach(cleanupEmptyGroup);
+  return id;
+}
+function assignFeatureToGroup(feature,groupId){
+  if(!feature) return;
+  getGroupMeta(groupId);
+  const prev=feature.properties?._group;
+  feature.properties._group=groupId;
+  if(prev && prev!==groupId) cleanupEmptyGroup(prev);
+}
+function mergeGroups(aId,bId){
+  if(!aId || !bId || aId===bId) return null;
+  const groups=ensureGroupStore();
+  const features=window.userFC.features.filter(f=>f?.properties?._group===aId || f?.properties?._group===bId);
+  const name=[groups[aId]?.name, groups[bId]?.name].filter(Boolean).join(' + ') || nextGroupName();
+  const newId=createGroupFromFeatures(features,{name});
+  cleanupEmptyGroup(aId);
+  cleanupEmptyGroup(bId);
+  return newId;
+}
+function ungroupFeature(feature){
+  if(!feature?.properties) return;
+  const prev=feature.properties._group;
+  if(prev){
+    delete feature.properties._group;
+    cleanupEmptyGroup(prev);
+  }
+}
+function ungroupGroup(groupId){
+  if(!groupId) return;
+  window.userFC.features.forEach(f=>{
+    if(f?.properties?._group===groupId) delete f.properties._group;
+  });
+  cleanupEmptyGroup(groupId);
+}
+
+const dragState={ type:null, featureId:null, groupId:null };
+
+function clearDropHints(){
+  document.querySelectorAll('.dropHint').forEach(el=>el.classList.remove('dropHint'));
+  objList?.classList.remove('dropHint');
+}
+function clearDragState(){
+  dragState.type=null;
+  dragState.featureId=null;
+  dragState.groupId=null;
+  clearDropHints();
+}
+
+function addDnD(el,{type,feature,groupId}){
+  if(!el) return;
+  el.addEventListener('dragstart',e=>{
+    if(type==='feature' && feature){
+      dragState.type='feature';
+      dragState.featureId=getId(feature);
+      dragState.groupId=feature.properties?._group||null;
+    }else if(type==='group' && groupId){
+      dragState.type='group';
+      dragState.groupId=groupId;
+    }
+    el.classList.add('dragging');
+    try{ e.dataTransfer?.setData('text/plain', dragState.type||''); }catch(_){ }
+  });
+  el.addEventListener('dragend',()=>{
+    el.classList.remove('dragging');
+    clearDragState();
+  });
+  el.addEventListener('dragover',e=>{
+    if(!dragState.type) return;
+    if(type==='feature'){
+      if(dragState.type==='feature' && feature && dragState.featureId===getId(feature)) return;
+      e.preventDefault();
+      el.classList.add('dropHint');
+    }else if(type==='group'){
+      if(dragState.type==='group' && dragState.groupId===groupId) return;
+      e.preventDefault();
+      el.classList.add('dropHint');
+    }
+  });
+  el.addEventListener('dragleave',()=>{
+    el.classList.remove('dropHint');
+  });
+  el.addEventListener('drop',e=>{
+    if(!dragState.type) return;
+    e.preventDefault();
+    e.stopPropagation();
+    el.classList.remove('dropHint');
+    let changed=false;
+    if(type==='feature' && feature){
+      if(dragState.type==='feature'){
+        if(dragState.featureId!==getId(feature)){
+          const draggedFeature=findFeatureById(dragState.featureId);
+          if(draggedFeature){
+            if(feature.properties?._group){
+              assignFeatureToGroup(draggedFeature, feature.properties._group);
+            }else{
+              createGroupFromFeatures([draggedFeature, feature]);
+            }
+            changed=true;
+          }
+        }
+      }else if(dragState.type==='group' && dragState.groupId){
+        const features=window.userFC.features.filter(f=>f?.properties?._group===dragState.groupId);
+        features.push(feature);
+        createGroupFromFeatures(features);
+        cleanupEmptyGroup(dragState.groupId);
+        changed=true;
+      }
+    }else if(type==='group' && groupId){
+      if(dragState.type==='feature'){
+        const draggedFeature=findFeatureById(dragState.featureId);
+        if(draggedFeature){
+          assignFeatureToGroup(draggedFeature, groupId);
+          changed=true;
+        }
+      }else if(dragState.type==='group' && dragState.groupId && dragState.groupId!==groupId){
+        mergeGroups(dragState.groupId, groupId);
+        changed=true;
+      }
+    }
+    if(changed) syncUserFeatures();
+    clearDragState();
   });
 }
-function makeObjItem(f){
-  const el=document.createElement('div'); el.className='objItem'; el.draggable=true; el.dataset.fid=getId(f);
-  const typ=f.properties._type;
-  const icon=document.createElement('div'); icon.className='objType type-'+typ;
 
-  // ラベル：ダブルクリックで編集
-  const label=document.createElement('span'); label.className='objLabel';
-  const makeLabelText=()=>{
-    if(f.properties._type==='polygon'){
-      return [f.properties.label1,f.properties.label2].filter(Boolean).join(' / ') || '(無題)';
-    }
-    return f.properties.label || '(無題)';
-  };
-  label.textContent=makeLabelText();
-  label.title='ダブルクリックでラベル編集';
-  label.ondblclick=()=>{
-    if(f.properties._type==='polygon'){
-      openPolygonLabelEditor(f,{isNew:false});
-      return;
-    }
-    openSimpleLabelEditor(f,{
-      isNew:false,
-      title:'ラベル編集',
-      onApply:()=>{
-        label.textContent=makeLabelText();
-        syncUserFeatures({refreshList:false});
-      }
-    });
-  };
+function getFeatureLabelText(f){
+  if(!f?.properties) return '';
+  if(f.properties._type==='polygon'){
+    const l1=(f.properties.label1||'').trim();
+    const l2=(f.properties.label2||'').trim();
+    return [l1,l2].filter(Boolean).join(' / ');
+  }
+  return (f.properties.label||'').trim();
+}
 
-  // 🎨 スタイル編集ポップ
-  const styBtn=document.createElement('button'); styBtn.className='miniBtn'; styBtn.textContent='🎨';
-  styBtn.title='色/太さ/透明度';
-  styBtn.onclick=(e)=>{
-    e.stopPropagation();
-    const p=document.createElement('div');
-    p.className='floating'; p.style.left=(e.clientX-140)+'px'; p.style.top=(e.clientY-40)+'px'; p.style.transform='none';
-    p.innerHTML=`
-      <div class="floatHeader">スタイル<span class="handle">⣿</span></div>
-      <div class="floatBody">
-        <div class="row"><label>線色 <input type="color" id="stLine" value="${f.properties.stroke||'#1f2d3d'}"></label></div>
-        <div class="row"><label>線幅 <input type="number" id="stWidth" value="${f.properties.strokeWidth||2}" min="1" max="12"></label></div>
-        <div class="row"><label>塗色 <input type="color" id="stFill" value="${f.properties.fill||'#1f78b4'}"></label></div>
-        <div class="row"><label>不透明度 <input type="number" id="stFillOp" value="${f.properties.fillOpacity??0.3}" min="0" max="1" step="0.05"></label></div>
-        <div class="row" style="margin-top:8px">
-          <button class="btn" id="stApply">適応</button>
-          <button class="btn secondary" id="stClose">閉じる</button>
-        </div>
-      </div>`;
-    document.body.appendChild(p);
-    // ドラッグ
-    (function(h= p.querySelector('.handle')){let sx,sy,L=p.offsetLeft,T=p.offsetTop,D=false;
-      h.addEventListener('pointerdown',e=>{D=true;sx=e.clientX;sy=e.clientY;h.setPointerCapture(e.pointerId);});
-      h.addEventListener('pointermove',e=>{if(!D)return; p.style.left=(L+e.clientX-sx)+'px';p.style.top=(T+e.clientY-sy)+'px';});
-      h.addEventListener('pointerup',()=>{D=false;L=p.offsetLeft;T=p.offsetTop;});
-    })();
-    p.querySelector('#stApply').onclick=()=>{
-      const g=f.properties;
-      g.stroke = p.querySelector('#stLine').value;
-      g.strokeWidth = Number(p.querySelector('#stWidth').value)||2;
-      g.fill = p.querySelector('#stFill').value;
-      g.fillOpacity = Number(p.querySelector('#stFillOp').value)||0.3;
+function startSimpleLabelInlineEdit(feature,labelSpan){
+  if(!feature || !labelSpan) return;
+  if(labelSpan.dataset.editing==='1') return;
+  labelSpan.dataset.editing='1';
+  const original=getFeatureLabelText(feature);
+  const input=document.createElement('input');
+  input.type='text';
+  input.className='labelInlineInput';
+  input.value=feature.properties?.label||'';
+  labelSpan.replaceWith(input);
+  input.focus();
+  input.select();
+  const finish=(apply)=>{
+    if(apply){
+      feature.properties=feature.properties||{};
+      feature.properties.label=input.value.trim();
+      ensureDefaultStyle(feature);
       syncUserFeatures({refreshList:false});
-    };
-    p.querySelector('#stClose').onclick=()=> p.remove();
+      const next=getFeatureLabelText(feature);
+      labelSpan.textContent=next || '(無題)';
+      labelSpan.classList.toggle('empty', !next);
+    }else{
+      labelSpan.textContent=original || '(無題)';
+      labelSpan.classList.toggle('empty', !original);
+    }
+    if(input.parentElement) input.replaceWith(labelSpan);
+    delete labelSpan.dataset.editing;
   };
+  input.addEventListener('blur',()=>finish(true));
+  input.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){ e.preventDefault(); finish(true); }
+    else if(e.key==='Escape'){ e.preventDefault(); finish(false); }
+  });
+}
 
-  const del=document.createElement('button'); del.className='miniBtn'; del.textContent='削除'; del.onclick=()=>removeFeature(f);
+function startPolygonInlineEdit(feature,labelWrap,labelSpan){
+  if(!feature || !labelWrap || !labelSpan) return;
+  if(labelWrap.querySelector('.polyInlineEditor')) return;
+  const editor=document.createElement('div');
+  editor.className='polyInlineEditor';
+  const input1=document.createElement('input');
+  input1.type='text';
+  input1.value=feature.properties?.label1||'';
+  const input2=document.createElement('input');
+  input2.type='text';
+  input2.value=feature.properties?.label2||'';
+  const btnRow=document.createElement('div');
+  btnRow.className='btnRow';
+  const ok=document.createElement('button');
+  ok.textContent='OK';
+  ok.className='primary';
+  const cancel=document.createElement('button');
+  cancel.textContent='キャンセル';
+  btnRow.append(ok,cancel);
+  editor.append(input1,input2,btnRow);
+  labelSpan.style.display='none';
+  labelWrap.appendChild(editor);
+  input1.focus();
+  input1.select();
+  const restore=()=>{
+    if(editor.parentElement) editor.remove();
+    labelSpan.style.display='';
+    const text=getFeatureLabelText(feature);
+    labelSpan.textContent=text || '(無題)';
+    labelSpan.classList.toggle('empty', !text);
+  };
+  const apply=()=>{
+    feature.properties=feature.properties||{};
+    feature.properties.label1=input1.value.trim();
+    feature.properties.label2=input2.value.trim();
+    feature.properties.label=[feature.properties.label1,feature.properties.label2].filter(Boolean).join(' / ');
+    ensureDefaultStyle(feature);
+    syncUserFeatures({refreshList:false});
+    restore();
+  };
+  ok.addEventListener('click',apply);
+  cancel.addEventListener('click',restore);
+  editor.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){ e.preventDefault(); apply(); }
+    else if(e.key==='Escape'){ e.preventDefault(); restore(); }
+  });
+}
 
-  el.append(icon,label,styBtn,del);
-  addDnD(el,'feature');
+function fallbackStyleValue(features,prop){
+  for(const f of features){
+    const typ=f?.properties?._type;
+    if(typ && STYLE_DEFAULTS[typ] && STYLE_DEFAULTS[typ][prop]!==undefined){
+      return STYLE_DEFAULTS[typ][prop];
+    }
+  }
+  if(prop==='lineColor') return '#e53935';
+  if(prop==='fillColor') return '#43a047';
+  if(prop==='fillOpacity') return 0.5;
+  if(prop==='lineWidth') return 2;
+  if(prop==='labelColor') return '#000000';
+  if(prop==='labelSize') return 12;
+  return '';
+}
+function gatherStyleValue(features,prop){
+  let first=true; let val;
+  for(const f of features){
+    const cur=f?.properties?.[prop];
+    if(first){ val=cur; first=false; }
+    else if(val!==cur){ val=undefined; break; }
+  }
+  if(val===undefined || val===null || val==='') return fallbackStyleValue(features,prop);
+  return val;
+}
+function applyStyleToFeatures(features,style){
+  features.forEach(f=>{
+    if(!f?.properties) return;
+    const typ=f.properties._type;
+    if(style.lineColor!==undefined && (typ==='line'||typ==='polygon'||typ==='circle')){
+      f.properties.lineColor=style.lineColor;
+      f.properties.stroke=style.lineColor;
+    }
+    if(style.lineWidth!==undefined && (typ==='line'||typ==='polygon'||typ==='circle')){
+      let width=Number(style.lineWidth);
+      if(!Number.isFinite(width)) width=fallbackStyleValue([f],'lineWidth');
+      width=Math.max(1, Math.min(60, width));
+      f.properties.lineWidth=width;
+      f.properties.strokeWidth=width;
+    }
+    if(style.fillColor!==undefined && (typ==='polygon'||typ==='circle')){
+      f.properties.fillColor=style.fillColor;
+      f.properties.fill=style.fillColor;
+    }
+    if(style.fillOpacity!==undefined && (typ==='polygon'||typ==='circle')){
+      let op=Number(style.fillOpacity);
+      if(!Number.isFinite(op)) op=fallbackStyleValue([f],'fillOpacity');
+      op=Math.max(0, Math.min(1, op));
+      f.properties.fillOpacity=op;
+    }
+    if(style.labelColor!==undefined){
+      f.properties.labelColor=style.labelColor;
+    }
+    if(style.labelSize!==undefined){
+      let size=Number(style.labelSize);
+      if(!Number.isFinite(size)) size=fallbackStyleValue([f],'labelSize');
+      size=Math.max(8, Math.min(60, size));
+      f.properties.labelSize=size;
+    }
+    ensureDefaultStyle(f);
+  });
+  syncUserFeatures({refreshList:false});
+}
+function openStyleEditor(features,{title='スタイル設定'}={}){
+  const targets=features.filter(f=>f && f.properties);
+  if(!targets.length) return;
+  const panel=document.createElement('div');
+  panel.className='floating';
+  panel.style.minWidth='260px';
+  const header=document.createElement('div');
+  header.className='floatHeader';
+  const titleEl=document.createElement('div');
+  titleEl.textContent=title;
+  header.appendChild(titleEl);
+  const handle=document.createElement('span');
+  handle.className='handle';
+  handle.textContent='⣿';
+  handle.title='ドラッグで移動';
+  header.appendChild(handle);
+  const body=document.createElement('div');
+  body.className='floatBody';
+  panel.append(header,body);
+  document.body.appendChild(panel);
+  makeDraggable(panel);
+
+  const hasPoint=targets.some(f=>f.properties?._type==='point');
+  const hasLine=targets.some(f=>f.properties?._type==='line');
+  const hasPolygon=targets.some(f=>f.properties?._type==='polygon');
+  const hasCircle=targets.some(f=>f.properties?._type==='circle');
+
+  const inputs={};
+  const fields=[];
+  if(hasLine || hasPolygon || hasCircle){
+    fields.push({key:'lineColor', type:'color', label:'線色'});
+    fields.push({key:'lineWidth', type:'number', label:'線幅', min:1, max:20, step:1});
+  }
+  if(hasPolygon || hasCircle){
+    fields.push({key:'fillColor', type:'color', label:'塗色'});
+    fields.push({key:'fillOpacity', type:'number', label:'塗り不透明度', min:0, max:1, step:0.05});
+  }
+  if(hasPoint || hasLine || hasPolygon || hasCircle){
+    fields.push({key:'labelColor', type:'color', label:'ラベル色'});
+    fields.push({key:'labelSize', type:'number', label:'文字サイズ', min:8, max:48, step:1});
+  }
+
+  fields.forEach(field=>{
+    const row=document.createElement('div');
+    row.className='row';
+    const label=document.createElement('label');
+    label.textContent=field.label+' ';
+    const input=document.createElement('input');
+    input.type=field.type;
+    if(field.type==='color'){
+      input.value=String(gatherStyleValue(targets, field.key) || fallbackStyleValue(targets, field.key));
+    }else{
+      input.value=String(gatherStyleValue(targets, field.key));
+      if(field.min!==undefined) input.min=field.min;
+      if(field.max!==undefined) input.max=field.max;
+      if(field.step!==undefined) input.step=field.step;
+    }
+    label.appendChild(input);
+    row.appendChild(label);
+    body.appendChild(row);
+    inputs[field.key]=input;
+  });
+
+  const btnRow=document.createElement('div');
+  btnRow.className='row';
+  btnRow.style.marginTop='8px';
+  const applyBtn=document.createElement('button');
+  applyBtn.className='btn';
+  applyBtn.textContent='適用';
+  const closeBtn=document.createElement('button');
+  closeBtn.className='btn secondary';
+  closeBtn.textContent='閉じる';
+  btnRow.append(applyBtn,closeBtn);
+  body.appendChild(btnRow);
+
+  applyBtn.addEventListener('click',()=>{
+    const style={};
+    if(inputs.lineColor) style.lineColor=inputs.lineColor.value;
+    if(inputs.lineWidth) style.lineWidth=Number(inputs.lineWidth.value);
+    if(inputs.fillColor) style.fillColor=inputs.fillColor.value;
+    if(inputs.fillOpacity) style.fillOpacity=Number(inputs.fillOpacity.value);
+    if(inputs.labelColor) style.labelColor=inputs.labelColor.value;
+    if(inputs.labelSize) style.labelSize=Number(inputs.labelSize.value);
+    applyStyleToFeatures(targets, style);
+    panel.remove();
+  });
+  closeBtn.addEventListener('click',()=>panel.remove());
+}
+
+function startGroupNameEdit(meta,nameSpan){
+  if(!meta || !nameSpan) return;
+  const original=meta.name||'';
+  const input=document.createElement('input');
+  input.type='text';
+  input.className='labelInlineInput';
+  input.value=original;
+  nameSpan.replaceWith(input);
+  input.focus();
+  input.select();
+  const finish=(apply)=>{
+    if(apply){
+      const val=input.value.trim();
+      meta.name=val || nextGroupName();
+      syncUserFeatures({refreshList:false});
+    }else{
+      meta.name=original;
+    }
+    if(input.parentElement) input.replaceWith(nameSpan);
+    const display=meta.name || 'グループ';
+    nameSpan.textContent=display;
+    nameSpan.classList.toggle('empty', !meta.name);
+  };
+  input.addEventListener('blur',()=>finish(true));
+  input.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){ e.preventDefault(); finish(true); }
+    else if(e.key==='Escape'){ e.preventDefault(); finish(false); }
+  });
+}
+
+function makeObjItem(f){
+  ensureDefaultStyle(f);
+  const el=document.createElement('div');
+  el.className='objItem';
+  el.draggable=true;
+  el.dataset.fid=getId(f);
+  const icon=document.createElement('div');
+  icon.className='objType type-'+(f.properties?._type||'point');
+  const labelWrap=document.createElement('div');
+  labelWrap.className='objLabelWrap';
+  const labelSpan=document.createElement('span');
+  labelSpan.className='objLabelText';
+  const text=getFeatureLabelText(f);
+  labelSpan.textContent=text || '(無題)';
+  labelSpan.classList.toggle('empty', !text);
+  labelSpan.title='ダブルクリックでラベル編集';
+  labelSpan.addEventListener('dblclick',()=>{
+    if(f.properties?._type==='polygon') startPolygonInlineEdit(f,labelWrap,labelSpan);
+    else startSimpleLabelInlineEdit(f,labelSpan);
+  });
+  labelWrap.appendChild(labelSpan);
+
+  const actions=document.createElement('div');
+  actions.className='objActions';
+  const paletteBtn=document.createElement('button');
+  paletteBtn.className='iconBtn';
+  paletteBtn.title='色や大きさを変更';
+  paletteBtn.textContent='🎨';
+  paletteBtn.addEventListener('click',e=>{
+    e.stopPropagation();
+    openStyleEditor([f],{title:'スタイル'});
+  });
+  const trashBtn=document.createElement('button');
+  trashBtn.className='iconBtn danger';
+  trashBtn.title='削除';
+  trashBtn.textContent='🗑️';
+  trashBtn.addEventListener('click',e=>{
+    e.stopPropagation();
+    if(confirm('削除しますか？')) removeFeature(f);
+  });
+  actions.append(paletteBtn,trashBtn);
+
+  el.append(icon,labelWrap,actions);
+  addDnD(el,{type:'feature',feature:f});
   return el;
 }
 
-// 初期描画
+function removeFeature(f,{skipSync=false}={}){
+  const idx=window.userFC.features.indexOf(f);
+  if(idx>-1){
+    const prev=f?.properties?._group;
+    window.userFC.features.splice(idx,1);
+    if(prev) cleanupEmptyGroup(prev);
+    if(!skipSync) syncUserFeatures();
+  }
+}
+window.removeFeature=removeFeature;
+
+function refreshObjList(){
+  if(!objList) return;
+  objList.innerHTML='';
+  const groupsMap={};
+  window.userFC.features.forEach(f=>{
+    ensureDefaultStyle(f);
+    const gid=f?.properties?._group;
+    if(gid){
+      (groupsMap[gid]??={id:gid,items:[]}).items.push(f);
+    }else{
+      objList.appendChild(makeObjItem(f));
+    }
+  });
+  Object.values(groupsMap).forEach(group=>{
+    const gid=group.id;
+    const meta=getGroupMeta(gid);
+    const box=document.createElement('div');
+    box.className='grpItem';
+    box.draggable=true;
+    box.dataset.gid=gid;
+
+    const header=document.createElement('div');
+    header.className='grpHeader';
+    const icon=document.createElement('div');
+    icon.className='objType type-poly';
+    const nameWrap=document.createElement('div');
+    nameWrap.className='objLabelWrap';
+    const nameSpan=document.createElement('span');
+    nameSpan.className='objLabelText';
+    const display=meta.name || 'グループ';
+    nameSpan.textContent=display;
+    nameSpan.classList.toggle('empty', !meta.name);
+    nameSpan.title='ダブルクリックでグループ名を編集';
+    nameSpan.addEventListener('dblclick',()=>startGroupNameEdit(meta,nameSpan));
+    nameWrap.appendChild(nameSpan);
+    const actions=document.createElement('div');
+    actions.className='objActions';
+    const paletteBtn=document.createElement('button');
+    paletteBtn.className='iconBtn';
+    paletteBtn.title='グループ内の色や大きさを変更';
+    paletteBtn.textContent='🎨';
+    paletteBtn.addEventListener('click',e=>{
+      e.stopPropagation();
+      openStyleEditor(group.items,{title:`${meta.name||'グループ'}のスタイル`});
+    });
+    const trashBtn=document.createElement('button');
+    trashBtn.className='iconBtn danger';
+    trashBtn.title='グループを削除';
+    trashBtn.textContent='🗑️';
+    trashBtn.addEventListener('click',e=>{
+      e.stopPropagation();
+      if(confirm('グループを丸ごと削除しますか？')){
+        for(let i=window.userFC.features.length-1;i>=0;i--){
+          if(window.userFC.features[i]?.properties?._group===gid){
+            window.userFC.features.splice(i,1);
+          }
+        }
+        cleanupEmptyGroup(gid);
+        syncUserFeatures();
+      }
+    });
+    actions.append(paletteBtn,trashBtn);
+
+    header.append(icon,nameWrap,actions);
+
+    const wrap=document.createElement('div');
+    wrap.className='grpChildren';
+    group.items.forEach(item=>wrap.appendChild(makeObjItem(item)));
+
+    box.append(header,wrap);
+    addDnD(box,{type:'group',groupId:gid});
+    objList.appendChild(box);
+  });
+}
+
+objListPaletteBtn?.addEventListener('click',()=>{
+  const feats=[...(window.userFC?.features||[])];
+  if(!feats.length) return;
+  openStyleEditor(feats,{title:'全体のスタイル'});
+});
+objListTrashBtn?.addEventListener('click',()=>{
+  if(!window.userFC.features.length) return;
+  if(confirm('すべてのオブジェクトを削除しますか？')){
+    window.userFC.features.length=0;
+    window.userFC.groups={};
+    syncUserFeatures();
+  }
+});
+
+if(objList){
+  objList.addEventListener('dragover',e=>{
+    if(!dragState.type) return;
+    if(e.target!==objList) return;
+    e.preventDefault();
+    objList.classList.add('dropHint');
+  });
+  objList.addEventListener('dragleave',e=>{
+    if(e.target===objList) objList.classList.remove('dropHint');
+  });
+  objList.addEventListener('drop',e=>{
+    if(e.target!==objList) return;
+    if(!dragState.type) return;
+    e.preventDefault();
+    objList.classList.remove('dropHint');
+    if(dragState.type==='feature'){
+      const feature=findFeatureById(dragState.featureId);
+      if(feature){
+        ungroupFeature(feature);
+        syncUserFeatures();
+      }
+    }else if(dragState.type==='group' && dragState.groupId){
+      ungroupGroup(dragState.groupId);
+      syncUserFeatures();
+    }
+    clearDragState();
+  });
+}
+
 refreshObjList();
-/* ==== /object tools & list ==== */
 </script>
 <script>
   // ★ここにあなたの設定を入れてください（上部スクリプトの window.__supa を利用 / 未設定時は以下を使用）
@@ -2252,9 +2860,9 @@ refreshObjList();
   }
   // 既存の pushFeature / removeFeature などの末尾で autoSave() を呼びます
   const _push = window.pushFeature;
-  window.pushFeature = (f)=>{ _push(f); autoSave(); };
+  window.pushFeature = (f)=>{ _push(f); };
   const _rm = window.removeFeature;
-  window.removeFeature = (f)=>{ _rm(f); autoSave(); };
+  window.removeFeature = (f,opts)=>{ _rm(f,opts); };
 </script>
 
 </body>
