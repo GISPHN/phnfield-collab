@@ -103,11 +103,44 @@
   display:flex; align-items:center; gap:8px;
 }
 .objItem.dragging, .grpItem.dragging{ opacity:.4; }
-.objType{ width:22px; height:22px; border-radius:4px; display:inline-block; }
-.type-point{ background:#1976d2; }
-.type-line{  background:linear-gradient(90deg,#e53935 0 50%, transparent 0); border-bottom:3px solid #e53935; width:28px; }
-.type-poly{  background:#43a047; opacity:.6; }
-.type-circle{ background:#6d4c41; opacity:.6; border-radius:50%; }
+.objType{
+  width:24px; height:24px; border-radius:6px; display:flex; align-items:center; justify-content:center;
+  position:relative; font-size:14px; color:#1f2937;
+}
+.objType::before{ content:''; }
+.objType.type-point::before{
+  content:'⚑';
+  font-size:16px;
+  color:var(--icon-line-color,#1976d2);
+  transform:translateY(-1px);
+}
+.objType.type-line::before{
+  position:absolute;
+  left:3px; right:3px; top:50%;
+  content:'';
+  border-top:3px solid var(--icon-line-color,#e53935);
+  border-radius:2px;
+}
+.objType.type-poly::before{
+  content:'';
+  width:16px; height:16px;
+  background:var(--icon-fill-color,#43a047);
+  border:2px solid var(--icon-stroke-color,#2e7d32);
+  border-radius:3px;
+  box-sizing:border-box;
+}
+.objType.type-circle::before{
+  content:'';
+  width:16px; height:16px;
+  background:var(--icon-fill-color,#6d4c41);
+  border:2px solid var(--icon-stroke-color,#4e342e);
+  border-radius:50%;
+  box-sizing:border-box;
+}
+.objType.type-group::before{
+  content:'🗂️';
+  font-size:15px;
+}
 .dropHint{ outline:2px dashed #1e88e5; }
 
 .objLabelWrap{ flex:1 1 auto; min-width:0; }
@@ -761,6 +794,7 @@ input[type="number"]{ width:70px; }
   if(!window.userFC.groups || typeof window.userFC.groups!=='object') window.userFC.groups={};
   if(typeof window.userFC._groupSeq!=='number') window.userFC._groupSeq=1;
   window.userFC.features.forEach(f=>{ try{ ensureDefaultStyle(f); }catch(_){} });
+  window.userLabelFC = buildUserLabelCollection(window.userFC);
 
   // 都道府県
   const PREFS=["北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県","茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県","新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県","静岡県","愛知県","三重県","滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県","鳥取県","島根県","岡山県","広島県","山口県","徳島県","香川県","愛媛県","高知県","福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"];
@@ -1875,6 +1909,9 @@ if (!map.getSource('gsi-photo')) {
 // ユーザー図形（グローバル）
 if (!map.getSource('user-src')){
   map.addSource('user-src', { type:'geojson', data:window.userFC });
+  if(!map.getSource('user-labels')){
+    map.addSource('user-labels', { type:'geojson', data:window.userLabelFC || {type:'FeatureCollection',features:[]} });
+  }
 
   ensureUserPointFlagIcon();
   map.addLayer({ id:'user-point-emoji', type:'symbol', source:'user-src',
@@ -1893,11 +1930,11 @@ if (!map.getSource('user-src')){
     layout:{ 'line-cap':'round','line-join':'round' },
     paint:{ 'line-color':['coalesce',['get','lineColor'],'#e53935'],'line-width':['coalesce',['get','lineWidth'],2] }
   });
-  map.addLayer({ id:'user-line-label', type:'symbol', source:'user-src',
-    filter:['==',['get','_type'],'line'],
-    layout:{ 'symbol-placement':'line-center','text-field':['coalesce',['get','label'],''],
+  map.addLayer({ id:'user-line-label', type:'symbol', source:'user-labels',
+    filter:['==',['get','_labelType'],'line'],
+    layout:{ 'symbol-placement':'point','text-field':['coalesce',['get','labelText'],''],
       'text-size':['+', ['coalesce',['get','labelSize'],12], 5],
-      'text-rotation-alignment':'viewport','text-allow-overlap':false },
+      'text-anchor':'center','text-offset':[0,0],'text-allow-overlap':false },
     paint:{ 'text-color':['coalesce',['get','labelColor'],'#000000'],'text-halo-color':'#fff','text-halo-width':1.6 }
   });
   map.addLayer({ id:'user-poly-fill', type:'fill', source:'user-src',
@@ -1908,16 +1945,10 @@ if (!map.getSource('user-src')){
     filter:['in',['get','_type'],['literal',['polygon','circle']]],
     paint:{ 'line-color':['coalesce',['get','lineColor'],'#2e7d32'],'line-width':['coalesce',['get','lineWidth'],2] }
   });
-  map.addLayer({ id:'user-poly-label', type:'symbol', source:'user-src',
-    filter:['==',['get','_type'],'polygon'],
+  map.addLayer({ id:'user-poly-label', type:'symbol', source:'user-labels',
+    filter:['==',['get','_labelType'],'polygon'],
     layout:{
-      'text-field':["case",
-        ["all",["!",["has","label1"]],["!",["has","label2"]]],"",
-        ["all",["has","label1"],["has","label2"]],["concat",["get","label1"],"\n",["get","label2"]],
-        ["has","label1"],["get","label1"],
-        ["has","label2"],["get","label2"],
-        ""
-      ],
+      'text-field':['coalesce',['get','labelText'],''],
       'text-size':['+', ['coalesce',['get','labelSize'],12], 5],
       'text-anchor':'center',
       'text-offset':[0,0],
@@ -1926,10 +1957,10 @@ if (!map.getSource('user-src')){
     },
     paint:{ 'text-color':['coalesce',['get','labelColor'],'#000000'],'text-halo-color':'#fff','text-halo-width':1.6 }
   });
-  map.addLayer({ id:'user-circle-label', type:'symbol', source:'user-src',
-    filter:['==',['get','_type'],'circle'],
+  map.addLayer({ id:'user-circle-label', type:'symbol', source:'user-labels',
+    filter:['==',['get','_labelType'],'circle'],
     layout:{
-      'text-field':['coalesce',['get','label'],''],
+      'text-field':['coalesce',['get','labelText'],''],
       'text-size':['+', ['coalesce',['get','labelSize'],12], 5],
       'text-anchor':'center',
       'text-offset':[0,0],
@@ -1988,11 +2019,99 @@ const syncObjToolbar=open=>{
   objToolbarBtn.classList.toggle('toggle-on', !!open);
 };
 const setTemp = fc => map.getSource('user-temp').setData(fc || {type:'FeatureCollection',features:[]});
+function computeLabelCoordinates(feature){
+  if(!feature?.geometry) return null;
+  const typ=feature?.properties?._type;
+  try{
+    if(typ==='line'){
+      if(feature.geometry.type==='LineString'){
+        const len=turf.length(feature,{units:'kilometers'});
+        if(len>0){
+          const mid=turf.along(feature,len/2,{units:'kilometers'});
+          if(mid?.geometry?.coordinates) return mid.geometry.coordinates;
+        }
+      }
+      const center=turf.centerOfMass(feature);
+      if(center?.geometry?.coordinates) return center.geometry.coordinates;
+    }else if(typ==='polygon' || typ==='circle'){
+      const center=turf.centerOfMass(feature);
+      if(center?.geometry?.coordinates) return center.geometry.coordinates;
+    }
+  }catch(err){ console.warn('label coordinate error', err); }
+  if(feature.geometry.type==='Point' && Array.isArray(feature.geometry.coordinates)){
+    return feature.geometry.coordinates;
+  }
+  if(feature.geometry.type==='LineString' && Array.isArray(feature.geometry.coordinates) && feature.geometry.coordinates.length){
+    return feature.geometry.coordinates[Math.floor(feature.geometry.coordinates.length/2)];
+  }
+  if((feature.geometry.type==='Polygon' || feature.geometry.type==='MultiLineString') && Array.isArray(feature.geometry.coordinates?.[0]) && feature.geometry.coordinates[0].length){
+    return feature.geometry.coordinates[0][0];
+  }
+  return null;
+}
+
+function buildLabelFeature(feature){
+  const typ=feature?.properties?._type;
+  if(!typ || typ==='point') return null;
+  const props=feature.properties||{};
+  const labelColor=props.labelColor || (STYLE_DEFAULTS[typ]?.labelColor ?? '#000000');
+  const rawSize=Number(props.labelSize);
+  const labelSize=Number.isFinite(rawSize) ? rawSize : (STYLE_DEFAULTS[typ]?.labelSize ?? 12);
+  let labelText='';
+  if(typ==='polygon'){
+    const line1=(props.label1||'').trim();
+    const line2=(props.label2||'').trim();
+    labelText=[line1,line2].filter(Boolean).join('\n');
+    if(!labelText){
+      labelText=(props.label||'').trim();
+      labelText=labelText.replace(' / ','\n');
+    }
+  }else{
+    labelText=(props.label||'').trim();
+  }
+  if(!labelText) return null;
+  const coords=computeLabelCoordinates(feature);
+  if(!coords) return null;
+  return {
+    type:'Feature',
+    properties:{
+      _labelType:typ,
+      labelText,
+      labelColor,
+      labelSize
+    },
+    geometry:{ type:'Point', coordinates:coords }
+  };
+}
+
+function buildUserLabelCollection(fc=window.userFC){
+  const features=[];
+  if(fc?.features?.length){
+    fc.features.forEach(f=>{
+      try{
+        ensureDefaultStyle(f);
+        const labelFeature=buildLabelFeature(f);
+        if(labelFeature) features.push(labelFeature);
+      }catch(err){ console.warn('build label feature failed', err); }
+    });
+  }
+  return { type:'FeatureCollection', features };
+}
+
+function syncUserLabelSource(){
+  window.userLabelFC=buildUserLabelCollection();
+  if(map?.getSource('user-labels')){
+    map.getSource('user-labels').setData(window.userLabelFC);
+  }
+}
+
 function syncUserFeatures({refreshList=true}={}){
   ensureGroupStore();
   cleanupGroupStore();
   if(map.getSource('user-src')) map.getSource('user-src').setData(window.userFC);
+  syncUserLabelSource();
   if(refreshList) refreshObjList();
+  else updateObjListItems();
   saveUserFCToStorage(window.userFC);
   if(typeof autoSave==='function') autoSave();
 }
@@ -2606,6 +2725,27 @@ function startGroupNameEdit(meta,nameSpan){
   });
 }
 
+function syncObjIconStyle(icon,feature){
+  if(!icon) return;
+  icon.style.removeProperty('--icon-line-color');
+  icon.style.removeProperty('--icon-fill-color');
+  icon.style.removeProperty('--icon-stroke-color');
+  const typ=feature?.properties?._type||'point';
+  icon.className='objType type-'+typ;
+  const props=feature?.properties||{};
+  if(typ==='point'){
+    icon.style.setProperty('--icon-line-color', props.labelColor||STYLE_DEFAULTS.point.labelColor||'#1976d2');
+  }else if(typ==='line'){
+    icon.style.setProperty('--icon-line-color', props.lineColor||STYLE_DEFAULTS.line.lineColor||'#e53935');
+  }else if(typ==='polygon'){
+    icon.style.setProperty('--icon-fill-color', props.fillColor||STYLE_DEFAULTS.polygon.fillColor||'#43a047');
+    icon.style.setProperty('--icon-stroke-color', props.lineColor||STYLE_DEFAULTS.polygon.lineColor||'#2e7d32');
+  }else if(typ==='circle'){
+    icon.style.setProperty('--icon-fill-color', props.fillColor||STYLE_DEFAULTS.circle.fillColor||'#6d4c41');
+    icon.style.setProperty('--icon-stroke-color', props.lineColor||STYLE_DEFAULTS.circle.lineColor||'#4e342e');
+  }
+}
+
 function makeObjItem(f){
   ensureDefaultStyle(f);
   const el=document.createElement('div');
@@ -2613,7 +2753,7 @@ function makeObjItem(f){
   el.draggable=true;
   el.dataset.fid=getId(f);
   const icon=document.createElement('div');
-  icon.className='objType type-'+(f.properties?._type||'point');
+  syncObjIconStyle(icon,f);
   const labelWrap=document.createElement('div');
   labelWrap.className='objLabelWrap';
   const labelSpan=document.createElement('span');
@@ -2688,7 +2828,7 @@ function refreshObjList(){
     const header=document.createElement('div');
     header.className='grpHeader';
     const icon=document.createElement('div');
-    icon.className='objType type-poly';
+    icon.className='objType type-group';
     const nameWrap=document.createElement('div');
     nameWrap.className='objLabelWrap';
     const nameSpan=document.createElement('span');
@@ -2736,6 +2876,25 @@ function refreshObjList(){
     box.append(header,wrap);
     addDnD(box,{type:'group',groupId:gid});
     objList.appendChild(box);
+  });
+}
+
+function updateObjListItems(){
+  if(!objList) return;
+  document.querySelectorAll('.objItem').forEach(el=>{
+    const fid=el.dataset.fid;
+    if(!fid) return;
+    const feature=findFeatureById(fid);
+    if(!feature) return;
+    ensureDefaultStyle(feature);
+    const icon=el.querySelector('.objType');
+    if(icon) syncObjIconStyle(icon,feature);
+    const labelSpan=el.querySelector('.objLabelText');
+    if(labelSpan){
+      const text=getFeatureLabelText(feature);
+      labelSpan.textContent=text || '(無題)';
+      labelSpan.classList.toggle('empty', !text);
+    }
   });
 }
 
@@ -2845,6 +3004,8 @@ refreshObjList();
       if(error || !data) return;
       if(data.data?.features){
         window.userFC = data.data;
+        window.userFC.features.forEach(f=>{ try{ ensureDefaultStyle(f); }catch(_){} });
+        window.userLabelFC = buildUserLabelCollection(window.userFC);
         syncUserFeatures();
       }
     }catch(e){ console.warn('loadUserData', e); }
