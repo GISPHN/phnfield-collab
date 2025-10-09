@@ -805,10 +805,39 @@ input[type="number"]{ width:70px; }
   let polygonLabelTarget=null;
   let polygonResumeMode=null;
   let polygonIsNew=false;
+  let polygonPreviewFeature=null;
+  function showPolygonPreview(feature){
+    if(!feature?.geometry) return;
+    polygonPreviewFeature=feature;
+    try{
+      const src=map?.getSource?.('user-temp');
+      if(src){
+        src.setData({ type:'FeatureCollection', features:[feature] });
+      }
+      if(map?.getLayer?.('user-temp-fill')){
+        map.setLayoutProperty('user-temp-fill','visibility','visible');
+      }
+    }catch(err){ console.warn('showPolygonPreview', err); }
+  }
+  function clearPolygonPreview(){
+    if(!polygonPreviewFeature) return;
+    polygonPreviewFeature=null;
+    try{
+      const src=map?.getSource?.('user-temp');
+      if(src){
+        src.setData({ type:'FeatureCollection', features:[] });
+      }
+      if(map?.getLayer?.('user-temp-fill')){
+        const vis=(addMode==='polygon'||addMode==='circle')?'visible':'none';
+        map.setLayoutProperty('user-temp-fill','visibility',vis);
+      }
+    }catch(err){ console.warn('clearPolygonPreview', err); }
+  }
   function openPolygonLabelEditor(feature,{resumeMode=null,isNew=false}={}){
     polygonLabelTarget=feature;
     polygonResumeMode=resumeMode;
     polygonIsNew=isNew;
+    if(isNew) showPolygonPreview(feature);
     if(feature){
       const props=feature.properties||{};
       $('polyLabelInput1').value=props.label1||'';
@@ -834,12 +863,15 @@ input[type="number"]{ width:70px; }
       if(!('lineColor' in polyProps)) polyProps.lineColor='#2e7d32';
       if(!('lineWidth' in polyProps)) polyProps.lineWidth=2;
       ensureDefaultStyle(polygonLabelTarget);
+      clearPolygonPreview();
       if(polygonIsNew){
         if(typeof window.pushFeature==='function') window.pushFeature(polygonLabelTarget);
         else if(window.userFC && Array.isArray(window.userFC.features)){ window.userFC.features.push(polygonLabelTarget); if(typeof syncUserFeatures==='function') syncUserFeatures(); }
       }else{
         if(typeof syncUserFeatures==='function') syncUserFeatures();
       }
+    }else{
+      clearPolygonPreview();
     }
     polygonLabelTarget=null;
     polygonIsNew=false;
