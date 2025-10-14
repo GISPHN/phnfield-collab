@@ -2367,7 +2367,26 @@ function updateObjSubtoolsLayout({force=false}={}){
 }
 const syncObjToolbar=open=>{
   if(!objToolbarBtn || !objSubtools) return;
-  objSubtools.style.display=open?'flex':'none';
+  if(open){
+    objSubtools.style.display='flex';
+    if(mobilePanelQuery.matches){
+      objSubtools.classList.add('mobile-floating');
+      objSubtools.style.marginLeft='0';
+      if(typeof objToolbarBtn.scrollIntoView==='function'){
+        objToolbarBtn.scrollIntoView({ behavior:'smooth', block:'nearest', inline:'center' });
+      }
+      positionObjSubtools();
+    }else{
+      objSubtools.classList.remove('mobile-floating');
+      objSubtools.style.marginLeft='8px';
+      objSubtools.style.removeProperty('--obj-subtool-top');
+    }
+  }else{
+    objSubtools.style.display='none';
+    objSubtools.classList.remove('mobile-floating');
+    objSubtools.style.removeProperty('--obj-subtool-top');
+    objSubtools.style.marginLeft=mobilePanelQuery.matches?'0':'8px';
+  }
   objToolbarBtn.classList.toggle('toggle-on', !!open);
   objToolbar?.classList.toggle('is-open', !!open);
   if(open){
