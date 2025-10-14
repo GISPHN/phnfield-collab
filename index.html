@@ -258,6 +258,84 @@ input[type="number"]{ width:70px; }
 .miniBtn{padding:4px 8px;border-radius:8px;border:none;background:#f3f4f6;cursor:pointer}
 .miniBtn:hover{background:#e5e7eb}
 
+    .panelToggle{
+      position:fixed;
+      width:42px;height:42px;
+      background:rgba(15,23,42,.55);
+      border:none;border-radius:12px;
+      display:none;align-items:center;justify-content:center;
+      z-index:25;cursor:pointer;
+      transition:background .2s ease,transform .3s ease;
+      backdrop-filter:blur(4px);
+    }
+    .panelToggle:focus-visible{outline:2px solid #38bdf8;outline-offset:2px}
+    .panelToggle:hover{background:rgba(15,23,42,.7)}
+    .panelToggle::after{
+      content:"";
+      width:14px;height:14px;
+      border:2px solid rgba(255,255,255,.9);
+      border-left:none;border-top:none;
+      transform:rotate(-45deg);
+      pointer-events:none;
+    }
+    .panelToggle-left{
+      clip-path:polygon(0 50%,100% 0,100% 100%);
+      padding-left:6px;
+    }
+    .panelToggle-left::after{transform:translateX(2px) rotate(-45deg)}
+    .panelToggle-left[aria-expanded="true"]{transform:scaleX(-1)}
+    .panelToggle-bottom{
+      clip-path:polygon(50% 0,0 100%,100% 100%);
+      padding-bottom:6px;
+    }
+    .panelToggle-bottom::after{transform:translateY(2px) rotate(45deg)}
+    .panelToggle-bottom[aria-expanded="true"]::after{transform:translateY(-4px) rotate(-135deg)}
+
+    @media (max-width:1200px){
+      .panel{width:300px;padding:10px}
+      .rightpane{width:280px;padding:10px}
+      .chip{padding:6px 8px;font-size:11px}
+    }
+
+    @media (max-width:1024px){
+      .topbar{position:fixed;top:8px;left:8px;right:8px;gap:6px;flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;pointer-events:auto}
+      .topbar::-webkit-scrollbar{display:none}
+      .chip{flex-shrink:0}
+      #objToolbar{gap:4px}
+      #objSubtools{gap:4px}
+      .panel{position:fixed;left:0;top:72px;width:min(320px,80vw);max-height:65vh;padding:12px;border-radius:0 12px 12px 0;transform:translateX(-110%);opacity:0;pointer-events:none;transition:transform .3s ease,opacity .3s ease}
+      .panel h3{font-size:15px}
+      .panel label,.panel input[type="text"],.panel select{font-size:12px}
+      .panel .btn{padding:6px 10px;font-size:12px}
+      .panel.is-open{transform:translateX(0);opacity:1;pointer-events:auto}
+      .rightpane{position:fixed;left:12px;right:12px;bottom:0;top:auto;width:auto;max-height:60vh;padding:12px;border-radius:12px 12px 0 0;transform:translateY(100%);opacity:0;pointer-events:none;transition:transform .3s ease,opacity .3s ease}
+      .rightpane h4{font-size:15px}
+      .rightpane.is-open{transform:translateY(0);opacity:1;pointer-events:auto}
+      .supabox{position:fixed;left:12px;right:12px;bottom:12px;min-width:0;padding:10px}
+      .supabox .row{justify-content:flex-start}
+      .panelToggle{display:flex}
+      .panelToggle-left{top:78px;left:8px}
+      .panelToggle-bottom{bottom:16px;left:50%;transform:translateX(-50%)}
+    }
+
+    @media (max-width:768px){
+      body{font-size:14px}
+      .panel{max-height:62vh;width:min(300px,82vw)}
+      .panelToggle-left{top:74px}
+      .rightpane{left:8px;right:8px;max-height:65vh;padding:10px}
+      .supabox{left:8px;right:8px;padding:10px}
+      .floating{width:min(320px,calc(100% - 24px))}
+      .floating .floatBody{max-height:60vh;overflow:auto}
+    }
+
+    @media (max-width:540px){
+      .chip{font-size:10px}
+      .panel{width:min(280px,84vw);max-height:60vh}
+      .rightpane{max-height:68vh;padding:10px}
+      .supabox{padding:8px}
+      .floating{width:calc(100% - 24px)}
+    }
+
   </style>
 </head>
 <body>
@@ -346,6 +424,9 @@ input[type="number"]{ width:70px; }
       </div>
     </div>
   </div>
+
+  <button class="panelToggle panelToggle-left" id="panelToggle" aria-label="レイヤ / 背景地図パネルを開閉" aria-controls="panel" aria-expanded="false"></button>
+  <button class="panelToggle panelToggle-bottom" id="objectToggle" aria-label="オブジェクト一覧パネルを開閉" aria-controls="objectDrawer" aria-expanded="false"></button>
 
   <!-- 左パネル -->
   <div class="panel" id="panel">
@@ -484,7 +565,7 @@ input[type="number"]{ width:70px; }
   <!-- ▲ オブジェクト ラベル入力バブル ▲ -->
 
   <!-- 右パネル -->
-  <div class="rightpane">
+  <div class="rightpane" id="objectDrawer">
 <div id="objPanel">
   <div class="inline small" style="margin-bottom:6px; align-items:center;">
     <strong>オブジェクト一覧</strong>
@@ -574,6 +655,51 @@ input[type="number"]{ width:70px; }
     header.addEventListener('pointerup',()=>{dragging=false;});
   };
   const centerPanel=(panel)=>{ if(panel) showFloatingPanel(panel); };
+
+  const layerPanel=$('panel');
+  const objectDrawer=$('objectDrawer');
+  const panelToggleBtn=$('panelToggle');
+  const objectToggleBtn=$('objectToggle');
+  const mobilePanelQuery=window.matchMedia('(max-width: 1024px)');
+
+  const syncPanelToggleState=()=>{
+    if(panelToggleBtn) panelToggleBtn.setAttribute('aria-expanded', layerPanel?.classList.contains('is-open') ? 'true' : 'false');
+    if(objectToggleBtn) objectToggleBtn.setAttribute('aria-expanded', objectDrawer?.classList.contains('is-open') ? 'true' : 'false');
+  };
+
+  const closeResponsivePanel=(panel)=>{ panel?.classList.remove('is-open'); };
+
+  panelToggleBtn?.addEventListener('click',()=>{
+    const willOpen=layerPanel?.classList.toggle('is-open');
+    if(willOpen){
+      closeResponsivePanel(objectDrawer);
+    }
+    syncPanelToggleState();
+  });
+
+  objectToggleBtn?.addEventListener('click',()=>{
+    const willOpen=objectDrawer?.classList.toggle('is-open');
+    if(willOpen){
+      closeResponsivePanel(layerPanel);
+    }
+    syncPanelToggleState();
+  });
+
+  const handleResponsivePanels=()=>{
+    if(!mobilePanelQuery.matches){
+      closeResponsivePanel(layerPanel);
+      closeResponsivePanel(objectDrawer);
+    }
+    syncPanelToggleState();
+  };
+
+  if(typeof mobilePanelQuery.addEventListener==='function'){
+    mobilePanelQuery.addEventListener('change',handleResponsivePanels);
+  }else if(typeof mobilePanelQuery.addListener==='function'){
+    mobilePanelQuery.addListener(handleResponsivePanels);
+  }
+  window.addEventListener('orientationchange',handleResponsivePanels);
+  handleResponsivePanels();
 
   const simpleLabelPanel=$('simpleLabelPanel');
   const simpleLabelInput=$('simpleLabelInput');
