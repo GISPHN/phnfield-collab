@@ -82,7 +82,8 @@
 .cursor-crosshair{cursor:crosshair!important;}
 
 /* --- 上部のオブジェクト追加ボタンとサブツール --- */
-#objToolbar{ display:flex; gap:6px; align-items:center; pointer-events:auto; }
+#objToolbar{ display:flex; gap:6px; align-items:center; pointer-events:auto; position:relative; flex-shrink:0; }
+#btnObj{ display:inline-flex; align-items:center; justify-content:center; white-space:nowrap; }
 #objSubtools{ display:none; gap:6px; margin-left:8px; pointer-events:auto; }
 .chip.toggle-on{ background:#1e88e5; color:#fff; }
 .tool{ padding:6px 10px; border-radius:8px; background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.12); cursor:pointer; user-select:none; pointer-events:auto; }
@@ -258,6 +259,128 @@ input[type="number"]{ width:70px; }
 .miniBtn{padding:4px 8px;border-radius:8px;border:none;background:#f3f4f6;cursor:pointer}
 .miniBtn:hover{background:#e5e7eb}
 
+    .panelToggle{
+      position:fixed;
+      width:42px;height:42px;
+      background:rgba(15,23,42,.55);
+      border:none;border-radius:12px;
+      display:none;align-items:center;justify-content:center;
+      z-index:25;cursor:pointer;
+      transition:background .2s ease,transform .3s ease;
+      backdrop-filter:blur(4px);
+    }
+    .panelToggle:focus-visible{outline:2px solid #38bdf8;outline-offset:2px}
+    .panelToggle:hover{background:rgba(15,23,42,.7)}
+    .panelToggle::after{
+      content:"";
+      width:14px;height:14px;
+      border:2px solid rgba(255,255,255,.9);
+      border-left:none;border-top:none;
+      transform:rotate(-45deg);
+      pointer-events:none;
+    }
+    .panelToggle-left{
+      clip-path:polygon(0 50%,100% 0,100% 100%);
+      padding-left:6px;
+    }
+    .panelToggle-left::after{transform:translateX(2px) rotate(-45deg)}
+    .panelToggle-left[aria-expanded="true"]{transform:scaleX(-1)}
+    .panelToggle-bottom{
+      clip-path:polygon(50% 0,0 100%,100% 100%);
+      padding-bottom:6px;
+    }
+    .panelToggle-bottom::after{transform:translateY(2px) rotate(45deg)}
+    .panelToggle-bottom[aria-expanded="true"]::after{transform:translateY(-4px) rotate(-135deg)}
+
+    @media (max-width:1200px){
+      .panel{width:300px;padding:10px}
+      .rightpane{width:280px;padding:10px}
+      .chip{padding:6px 8px;font-size:11px}
+    }
+
+    @media (max-width:1024px){
+      .topbar{position:fixed;top:8px;left:8px;right:8px;gap:6px;flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;pointer-events:auto}
+      .topbar::-webkit-scrollbar{display:none}
+      .chip{flex-shrink:0}
+      #objToolbar{gap:4px}
+      #objSubtools{gap:4px}
+      #objSubtools.mobile-subtools{
+        position:fixed;
+        left:50%;
+        transform:translate(-50%,0);
+        margin-left:0;
+        flex-wrap:wrap;
+        justify-content:center;
+        padding:8px 12px;
+        background:rgba(15,23,42,.86);
+        border-radius:14px;
+        box-shadow:0 16px 40px rgba(15,23,42,.28);
+        width:min(90vw,360px);
+        max-height:70vh;
+        overflow:auto;
+        z-index:60;
+        gap:8px;
+        top:var(--obj-subtools-top,120px);
+      }
+      #objSubtools.mobile-subtools .tool{
+        flex:0 1 auto;
+        text-align:center;
+        font-weight:600;
+        padding:7px 12px;
+        border-radius:10px;
+        background:#fff;
+        box-shadow:none;
+        min-width:68px;
+      }
+      #objSubtools.mobile-subtools .tool.active{
+        background:#2563eb;
+        color:#fff;
+      }
+      #surveyPanel.mobile-pop{
+        width:min(90vw,360px);
+        max-height:70vh;
+        overflow:auto;
+        left:50%;
+        transform:translate(-50%,0);
+        top:var(--survey-panel-top,120px);
+      }
+      #surveyPanel.mobile-pop .floatBody{
+        max-height:calc(70vh - 52px);
+        overflow:auto;
+      }
+      .panel{position:fixed;left:0;top:72px;width:min(320px,80vw);max-height:65vh;padding:12px;border-radius:0 12px 12px 0;transform:translateX(-110%);opacity:0;pointer-events:none;transition:transform .3s ease,opacity .3s ease}
+      .panel h3{font-size:15px}
+      .panel label,.panel input[type="text"],.panel select{font-size:12px}
+      .panel .btn{padding:6px 10px;font-size:12px}
+      .panel.is-open{transform:translateX(0);opacity:1;pointer-events:auto}
+      .rightpane{position:fixed;left:12px;right:12px;bottom:0;top:auto;width:auto;max-height:60vh;padding:12px;border-radius:12px 12px 0 0;transform:translateY(100%);opacity:0;pointer-events:none;transition:transform .3s ease,opacity .3s ease}
+      .rightpane h4{font-size:15px}
+      .rightpane.is-open{transform:translateY(0);opacity:1;pointer-events:auto}
+      .supabox{position:fixed;left:12px;right:12px;bottom:12px;min-width:0;padding:10px}
+      .supabox .row{justify-content:flex-start}
+      .panelToggle{display:flex}
+      .panelToggle-left{top:78px;left:8px}
+      .panelToggle-bottom{bottom:16px;left:50%;transform:translateX(-50%)}
+    }
+
+    @media (max-width:768px){
+      body{font-size:14px}
+      .panel{max-height:62vh;width:min(300px,82vw)}
+      .panelToggle-left{top:74px}
+      .rightpane{left:8px;right:8px;max-height:65vh;padding:10px}
+      .supabox{left:8px;right:8px;padding:10px}
+      .floating{width:min(320px,calc(100% - 24px))}
+      .floating .floatBody{max-height:60vh;overflow:auto}
+    }
+
+    @media (max-width:540px){
+      .chip{font-size:10px}
+      .panel{width:min(280px,84vw);max-height:60vh}
+      .rightpane{max-height:68vh;padding:10px}
+      .supabox{padding:8px}
+      .floating{width:calc(100% - 24px)}
+    }
+
   </style>
 </head>
 <body>
@@ -346,6 +469,9 @@ input[type="number"]{ width:70px; }
       </div>
     </div>
   </div>
+
+  <button class="panelToggle panelToggle-left" id="panelToggle" aria-label="レイヤ / 背景地図パネルを開閉" aria-controls="panel" aria-expanded="false"></button>
+  <button class="panelToggle panelToggle-bottom" id="objectToggle" aria-label="オブジェクト一覧パネルを開閉" aria-controls="objectDrawer" aria-expanded="false"></button>
 
   <!-- 左パネル -->
   <div class="panel" id="panel">
@@ -484,7 +610,7 @@ input[type="number"]{ width:70px; }
   <!-- ▲ オブジェクト ラベル入力バブル ▲ -->
 
   <!-- 右パネル -->
-  <div class="rightpane">
+  <div class="rightpane" id="objectDrawer">
 <div id="objPanel">
   <div class="inline small" style="margin-bottom:6px; align-items:center;">
     <strong>オブジェクト一覧</strong>
@@ -574,6 +700,52 @@ input[type="number"]{ width:70px; }
     header.addEventListener('pointerup',()=>{dragging=false;});
   };
   const centerPanel=(panel)=>{ if(panel) showFloatingPanel(panel); };
+
+  const layerPanel=$('panel');
+  const objectDrawer=$('objectDrawer');
+  const panelToggleBtn=$('panelToggle');
+  const objectToggleBtn=$('objectToggle');
+  const mobilePanelQuery=window.matchMedia('(max-width: 1024px)');
+  const topbarEl=document.querySelector('.topbar');
+
+  const syncPanelToggleState=()=>{
+    if(panelToggleBtn) panelToggleBtn.setAttribute('aria-expanded', layerPanel?.classList.contains('is-open') ? 'true' : 'false');
+    if(objectToggleBtn) objectToggleBtn.setAttribute('aria-expanded', objectDrawer?.classList.contains('is-open') ? 'true' : 'false');
+  };
+
+  const closeResponsivePanel=(panel)=>{ panel?.classList.remove('is-open'); };
+
+  panelToggleBtn?.addEventListener('click',()=>{
+    const willOpen=layerPanel?.classList.toggle('is-open');
+    if(willOpen){
+      closeResponsivePanel(objectDrawer);
+    }
+    syncPanelToggleState();
+  });
+
+  objectToggleBtn?.addEventListener('click',()=>{
+    const willOpen=objectDrawer?.classList.toggle('is-open');
+    if(willOpen){
+      closeResponsivePanel(layerPanel);
+    }
+    syncPanelToggleState();
+  });
+
+  const handleResponsivePanels=()=>{
+    if(!mobilePanelQuery.matches){
+      closeResponsivePanel(layerPanel);
+      closeResponsivePanel(objectDrawer);
+    }
+    syncPanelToggleState();
+  };
+
+  if(typeof mobilePanelQuery.addEventListener==='function'){
+    mobilePanelQuery.addEventListener('change',handleResponsivePanels);
+  }else if(typeof mobilePanelQuery.addListener==='function'){
+    mobilePanelQuery.addListener(handleResponsivePanels);
+  }
+  window.addEventListener('orientationchange',handleResponsivePanels);
+  handleResponsivePanels();
 
   const simpleLabelPanel=$('simpleLabelPanel');
   const simpleLabelInput=$('simpleLabelInput');
@@ -1252,13 +1424,45 @@ async function readFGB_fromURL(url) {
   window.__surveyNotePopup=null;
   makeDraggable(surveyPanelEl);
   makeDraggable(surveyNotePanelEl);
+  let lastSurveyPanelTop=null;
+  function positionSurveyPanel({force=false}={}){
+    if(!surveyPanelEl || surveyPanelEl.style.display==='none') return;
+    const btn=$('btnSurvey');
+    const btnRect=btn?.getBoundingClientRect?.();
+    const anchorRect=topbarEl?.getBoundingClientRect?.() || btnRect;
+    if(mobilePanelQuery.matches){
+      surveyPanelEl.classList.add('mobile-pop');
+      surveyPanelEl.style.removeProperty('left');
+      surveyPanelEl.style.removeProperty('top');
+      const desiredTop=((anchorRect?.bottom) ?? (btnRect?.bottom) ?? 72) + 12;
+      const applyPosition=()=>{
+        if(!surveyPanelEl || surveyPanelEl.style.display==='none') return;
+        const panelHeight=surveyPanelEl.offsetHeight||0;
+        const maxTop=Math.max(12, window.innerHeight - panelHeight - 12);
+        const clampedTop=Math.min(Math.max(desiredTop, 12), maxTop);
+        if(!force && lastSurveyPanelTop!==null && Math.abs(lastSurveyPanelTop-clampedTop)<1) return;
+        surveyPanelEl.style.setProperty('--survey-panel-top', `${Math.round(clampedTop)}px`);
+        lastSurveyPanelTop=clampedTop;
+      };
+      requestAnimationFrame(applyPosition);
+    }else{
+      surveyPanelEl.classList.remove('mobile-pop');
+      surveyPanelEl.style.removeProperty('--survey-panel-top');
+      surveyPanelEl.style.transform='none';
+      lastSurveyPanelTop=null;
+      if(anchorRect){
+        surveyPanelEl.style.left=`${anchorRect.left}px`;
+        surveyPanelEl.style.top=`${anchorRect.bottom+8}px`;
+      }
+    }
+  }
   function showSurveyPanel(){
     const btn=$('btnSurvey');
-    const rect=btn.getBoundingClientRect();
+    if(mobilePanelQuery.matches && btn && typeof btn.scrollIntoView==='function'){
+      btn.scrollIntoView({ behavior:'smooth', block:'nearest', inline:'center' });
+    }
     surveyPanelEl.style.display='block';
-    surveyPanelEl.style.transform='none';
-    surveyPanelEl.style.left=`${rect.left}px`;
-    surveyPanelEl.style.top=`${rect.bottom+8}px`;
+    positionSurveyPanel({force:true});
   }
   surveyCapSelect.innerHTML='';
   const noneOpt=document.createElement('option'); noneOpt.value=''; noneOpt.textContent='選択しない'; surveyCapSelect.appendChild(noneOpt);
@@ -1589,6 +1793,9 @@ async function readFGB_fromURL(url) {
       ensureSurveyWatch();
     }else{
       surveyPanelEl.style.display='none';
+      surveyPanelEl.classList.remove('mobile-pop');
+      surveyPanelEl.style.removeProperty('--survey-panel-top');
+      lastSurveyPanelTop=null;
       surveyFinishEl.style.display='none';
       surveyState.manualMode=false;
       surveyButtons.addManual.classList.remove('toggle-active');
@@ -2131,11 +2338,65 @@ if (!map.getSource('user-src')){
 let addMode=null, tempCoords=[], circleCenter=null;
 const objToolbarBtn=document.getElementById('btnObj');
 const objSubtools=document.getElementById('objSubtools');
+const objToolbar=document.getElementById('objToolbar');
+let lastObjSubtoolsTop=null;
+function updateObjSubtoolsLayout({force=false}={}){
+  if(!objSubtools) return;
+  const isOpen=objSubtools.style.display==='flex';
+  if(!isOpen || !mobilePanelQuery.matches){
+    if(force || !mobilePanelQuery.matches){
+      objSubtools.classList.remove('mobile-subtools');
+      objSubtools.style.removeProperty('--obj-subtools-top');
+      lastObjSubtoolsTop=null;
+    }
+    return;
+  }
+  objSubtools.classList.add('mobile-subtools');
+  const btnRect=objToolbarBtn?.getBoundingClientRect?.();
+  const anchorRect=topbarEl?.getBoundingClientRect?.() || btnRect;
+  const desiredTop=((anchorRect?.bottom) ?? (btnRect?.bottom) ?? 72) + 12;
+  requestAnimationFrame(()=>{
+    if(!objSubtools || objSubtools.style.display!=='flex') return;
+    const panelHeight=objSubtools.offsetHeight||0;
+    const maxTop=Math.max(12, window.innerHeight - panelHeight - 12);
+    const clampedTop=Math.min(Math.max(desiredTop, 12), maxTop);
+    if(!force && lastObjSubtoolsTop!==null && Math.abs(lastObjSubtoolsTop-clampedTop)<1) return;
+    objSubtools.style.setProperty('--obj-subtools-top', `${Math.round(clampedTop)}px`);
+    lastObjSubtoolsTop=clampedTop;
+  });
+}
 const syncObjToolbar=open=>{
   if(!objToolbarBtn || !objSubtools) return;
   objSubtools.style.display=open?'flex':'none';
   objToolbarBtn.classList.toggle('toggle-on', !!open);
+  objToolbar?.classList.toggle('is-open', !!open);
+  if(open){
+    if(mobilePanelQuery.matches && typeof objToolbarBtn.scrollIntoView==='function'){
+      objToolbarBtn.scrollIntoView({ behavior:'smooth', block:'nearest', inline:'center' });
+    }
+    updateObjSubtoolsLayout({force:true});
+  }else{
+    objSubtools.classList.remove('mobile-subtools');
+    objSubtools.style.removeProperty('--obj-subtools-top');
+    lastObjSubtoolsTop=null;
+  }
 };
+const handleResponsiveLayoutChange=()=>{
+  updateObjSubtoolsLayout({force:true});
+  positionSurveyPanel({force:true});
+};
+if(typeof mobilePanelQuery.addEventListener==='function'){
+  mobilePanelQuery.addEventListener('change', handleResponsiveLayoutChange);
+}else if(typeof mobilePanelQuery.addListener==='function'){
+  mobilePanelQuery.addListener(handleResponsiveLayoutChange);
+}
+const handleViewportChange=()=>{
+  updateObjSubtoolsLayout({force:true});
+  positionSurveyPanel({force:true});
+};
+window.addEventListener('resize', handleViewportChange);
+window.addEventListener('orientationchange', handleViewportChange);
+updateObjSubtoolsLayout({force:true});
 const setTemp = fc => map.getSource('user-temp').setData(fc || {type:'FeatureCollection',features:[]});
 function syncUserFeatures({refreshList=true}={}){
   ensureGroupStore();
@@ -2178,7 +2439,9 @@ function activateTool(mode){
 }
 
 // オブジェクト：メインボタン → サブツール開閉
-objToolbarBtn?.addEventListener('click', ()=>{
+objToolbarBtn?.addEventListener('click', (evt)=>{
+  evt?.preventDefault?.();
+  evt?.stopPropagation?.();
   if(!objSubtools) return;
   const isOpen=objSubtools.style.display==='flex';
   const nextOpen=!isOpen;
@@ -2189,7 +2452,9 @@ objToolbarBtn?.addEventListener('click', ()=>{
 });
 // 各ツール選択
 document.querySelectorAll('#objSubtools .tool').forEach(btn=>{
-  btn.addEventListener('click', ()=>{
+  btn.addEventListener('click', (evt)=>{
+    evt?.preventDefault?.();
+    evt?.stopPropagation?.();
     activateTool(btn.dataset.mode);
   });
 });
