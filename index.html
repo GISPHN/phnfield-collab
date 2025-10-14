@@ -258,6 +258,46 @@ input[type="number"]{ width:70px; }
 .miniBtn{padding:4px 8px;border-radius:8px;border:none;background:#f3f4f6;cursor:pointer}
 .miniBtn:hover{background:#e5e7eb}
 
+    @media (max-width:1200px){
+      .panel{width:300px;padding:10px}
+      .rightpane{width:280px;padding:10px}
+      .chip{padding:6px 8px;font-size:11px}
+    }
+
+    @media (max-width:900px){
+      .topbar{left:8px;right:8px;gap:6px}
+      .panel{width:270px}
+      .rightpane{width:250px}
+      .supabox{min-width:220px;padding:8px}
+    }
+
+    @media (max-width:768px){
+      body{font-size:14px}
+      .topbar{position:fixed;top:8px;left:8px;right:8px;gap:6px;flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px}
+      .topbar::-webkit-scrollbar{display:none}
+      .chip{flex-shrink:0;font-size:11px;padding:6px 8px}
+      #objToolbar{gap:4px}
+      #objSubtools{gap:4px}
+      .panel{position:fixed;left:8px;right:8px;top:72px;width:auto;max-height:42vh;padding:10px}
+      .panel h3{font-size:15px}
+      .panel label,.panel input[type="text"],.panel select{font-size:12px}
+      .panel .btn{padding:6px 10px;font-size:12px}
+      .rightpane{position:fixed;left:8px;right:8px;width:auto;top:auto;bottom:calc(12px + 150px);max-height:34vh;padding:10px}
+      .rightpane h4{font-size:15px}
+      .supabox{position:fixed;left:8px;right:8px;bottom:12px;min-width:0;padding:10px}
+      .supabox .row{justify-content:flex-start}
+      .floating{width:min(320px,calc(100% - 24px))}
+      .floating .floatBody{max-height:60vh;overflow:auto}
+    }
+
+    @media (max-width:540px){
+      .panel{max-height:48vh}
+      .rightpane{bottom:calc(12px + 140px);max-height:32vh}
+      .supabox{padding:8px}
+      .chip{font-size:10px}
+      .floating{width:calc(100% - 24px)}
+    }
+
   </style>
 </head>
 <body>
