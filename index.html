@@ -82,8 +82,9 @@
 .cursor-crosshair{cursor:crosshair!important;}
 
 /* --- 上部のオブジェクト追加ボタンとサブツール --- */
-#objToolbar{ display:flex; gap:6px; align-items:center; pointer-events:auto; }
-#objSubtools{ display:none; gap:6px; margin-left:8px; pointer-events:auto; }
+#objToolbar{ display:flex; gap:6px; align-items:center; pointer-events:auto; position:relative; flex-shrink:0; }
+#btnObj{ display:inline-flex; align-items:center; justify-content:center; white-space:nowrap; }
+#objSubtools{ display:none; gap:6px; margin-left:8px; pointer-events:auto; flex-wrap:wrap; }
 .chip.toggle-on{ background:#1e88e5; color:#fff; }
 .tool{ padding:6px 10px; border-radius:8px; background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.12); cursor:pointer; user-select:none; pointer-events:auto; }
 .tool.active{ outline:2px solid #1e88e5; }
@@ -303,6 +304,50 @@ input[type="number"]{ width:70px; }
       .chip{flex-shrink:0}
       #objToolbar{gap:4px}
       #objSubtools{gap:4px}
+      #objSubtools.mobile-floating{
+        position:fixed;
+        left:50%;
+        transform:translate(-50%,0);
+        margin-left:0;
+        flex-wrap:wrap;
+        justify-content:center;
+        padding:10px 12px;
+        background:rgba(15,23,42,.86);
+        border-radius:14px;
+        box-shadow:0 16px 40px rgba(15,23,42,.28);
+        width:min(90vw,340px);
+        max-height:70vh;
+        overflow:auto;
+        z-index:60;
+        gap:8px;
+        top:var(--obj-subtool-top,120px);
+      }
+      #objSubtools.mobile-floating .tool{
+        flex:0 1 auto;
+        text-align:center;
+        font-weight:600;
+        padding:8px 14px;
+        border-radius:10px;
+        background:#fff;
+        box-shadow:none;
+        min-width:72px;
+      }
+      #objSubtools.mobile-floating .tool.active{
+        background:#2563eb;
+        color:#fff;
+      }
+      #surveyPanel.mobile-pop{
+        width:min(90vw,360px);
+        max-height:70vh;
+        overflow:auto;
+        left:50%;
+        transform:translate(-50%,0);
+        top:var(--survey-panel-top,120px);
+      }
+      #surveyPanel.mobile-pop .floatBody{
+        max-height:calc(70vh - 52px);
+        overflow:auto;
+      }
       .panel{position:fixed;left:0;top:72px;width:min(320px,80vw);max-height:65vh;padding:12px;border-radius:0 12px 12px 0;transform:translateX(-110%);opacity:0;pointer-events:none;transition:transform .3s ease,opacity .3s ease}
       .panel h3{font-size:15px}
       .panel label,.panel input[type="text"],.panel select{font-size:12px}
@@ -1378,13 +1423,39 @@ async function readFGB_fromURL(url) {
   window.__surveyNotePopup=null;
   makeDraggable(surveyPanelEl);
   makeDraggable(surveyNotePanelEl);
+  function positionSurveyPanel(){
+    if(!surveyPanelEl || surveyPanelEl.style.display==='none') return;
+    const btn=$('btnSurvey');
+    if(!btn) return;
+    const rect=btn.getBoundingClientRect();
+    if(mobilePanelQuery.matches){
+      surveyPanelEl.classList.add('mobile-pop');
+      surveyPanelEl.style.removeProperty('left');
+      surveyPanelEl.style.removeProperty('top');
+      const desiredTop=rect.bottom+12;
+      const applyPosition=()=>{
+        if(!surveyPanelEl || surveyPanelEl.style.display==='none') return;
+        const panelHeight=surveyPanelEl.offsetHeight||0;
+        const maxTop=Math.max(12, window.innerHeight - panelHeight - 12);
+        const clampedTop=Math.min(Math.max(desiredTop, 12), maxTop);
+        surveyPanelEl.style.setProperty('--survey-panel-top', `${Math.round(clampedTop)}px`);
+      };
+      requestAnimationFrame(applyPosition);
+    }else{
+      surveyPanelEl.classList.remove('mobile-pop');
+      surveyPanelEl.style.removeProperty('--survey-panel-top');
+      surveyPanelEl.style.transform='none';
+      surveyPanelEl.style.left=`${rect.left}px`;
+      surveyPanelEl.style.top=`${rect.bottom+8}px`;
+    }
+  }
   function showSurveyPanel(){
     const btn=$('btnSurvey');
-    const rect=btn.getBoundingClientRect();
+    if(mobilePanelQuery.matches && btn && typeof btn.scrollIntoView==='function'){
+      btn.scrollIntoView({ behavior:'smooth', block:'nearest', inline:'center' });
+    }
     surveyPanelEl.style.display='block';
-    surveyPanelEl.style.transform='none';
-    surveyPanelEl.style.left=`${rect.left}px`;
-    surveyPanelEl.style.top=`${rect.bottom+8}px`;
+    positionSurveyPanel();
   }
   surveyCapSelect.innerHTML='';
   const noneOpt=document.createElement('option'); noneOpt.value=''; noneOpt.textContent='選択しない'; surveyCapSelect.appendChild(noneOpt);
@@ -1715,6 +1786,8 @@ async function readFGB_fromURL(url) {
       ensureSurveyWatch();
     }else{
       surveyPanelEl.style.display='none';
+      surveyPanelEl.classList.remove('mobile-pop');
+      surveyPanelEl.style.removeProperty('--survey-panel-top');
       surveyFinishEl.style.display='none';
       surveyState.manualMode=false;
       surveyButtons.addManual.classList.remove('toggle-active');
@@ -2257,11 +2330,81 @@ if (!map.getSource('user-src')){
 let addMode=null, tempCoords=[], circleCenter=null;
 const objToolbarBtn=document.getElementById('btnObj');
 const objSubtools=document.getElementById('objSubtools');
+function positionObjSubtools(){
+  if(!objToolbarBtn || !objSubtools) return;
+  if(!mobilePanelQuery.matches) return;
+  if(objSubtools.style.display!=='flex') return;
+  objSubtools.classList.add('mobile-floating');
+  objSubtools.style.marginLeft='0';
+  const rect=objToolbarBtn.getBoundingClientRect();
+  const desiredTop=rect.bottom+12;
+  const applyPosition=()=>{
+    if(!objSubtools || objSubtools.style.display!=='flex') return;
+    const panelHeight=objSubtools.offsetHeight||0;
+    const maxTop=Math.max(12, window.innerHeight - panelHeight - 12);
+    const clampedTop=Math.min(Math.max(desiredTop, 12), maxTop);
+    objSubtools.style.setProperty('--obj-subtool-top', `${Math.round(clampedTop)}px`);
+  };
+  requestAnimationFrame(applyPosition);
+}
 const syncObjToolbar=open=>{
   if(!objToolbarBtn || !objSubtools) return;
-  objSubtools.style.display=open?'flex':'none';
+  if(open){
+    objSubtools.style.display='flex';
+    if(mobilePanelQuery.matches){
+      objSubtools.classList.add('mobile-floating');
+      objSubtools.style.marginLeft='0';
+      if(typeof objToolbarBtn.scrollIntoView==='function'){
+        objToolbarBtn.scrollIntoView({ behavior:'smooth', block:'nearest', inline:'center' });
+      }
+      positionObjSubtools();
+    }else{
+      objSubtools.classList.remove('mobile-floating');
+      objSubtools.style.marginLeft='8px';
+      objSubtools.style.removeProperty('--obj-subtool-top');
+    }
+  }else{
+    objSubtools.style.display='none';
+    objSubtools.classList.remove('mobile-floating');
+    objSubtools.style.removeProperty('--obj-subtool-top');
+    objSubtools.style.marginLeft=mobilePanelQuery.matches?'0':'8px';
+  }
   objToolbarBtn.classList.toggle('toggle-on', !!open);
 };
+const refreshObjToolbarLayout=()=>{
+  if(!objSubtools) return;
+  if(objSubtools.style.display==='flex'){
+    if(mobilePanelQuery.matches){
+      positionObjSubtools();
+    }else{
+      objSubtools.classList.remove('mobile-floating');
+      objSubtools.style.marginLeft='8px';
+      objSubtools.style.removeProperty('--obj-subtool-top');
+    }
+  }else if(!mobilePanelQuery.matches){
+    objSubtools.classList.remove('mobile-floating');
+    objSubtools.style.marginLeft='8px';
+    objSubtools.style.removeProperty('--obj-subtool-top');
+  }else{
+    objSubtools.style.marginLeft='0';
+  }
+};
+const handleMobilePanelChange=()=>{
+  refreshObjToolbarLayout();
+  positionSurveyPanel();
+};
+if(typeof mobilePanelQuery.addEventListener==='function'){
+  mobilePanelQuery.addEventListener('change', handleMobilePanelChange);
+}else if(typeof mobilePanelQuery.addListener==='function'){
+  mobilePanelQuery.addListener(handleMobilePanelChange);
+}
+const handleViewportForObj=()=>{
+  if(objSubtools?.style.display==='flex') positionObjSubtools();
+  positionSurveyPanel();
+};
+window.addEventListener('resize', handleViewportForObj);
+window.addEventListener('orientationchange', handleViewportForObj);
+refreshObjToolbarLayout();
 const setTemp = fc => map.getSource('user-temp').setData(fc || {type:'FeatureCollection',features:[]});
 function syncUserFeatures({refreshList=true}={}){
   ensureGroupStore();
