@@ -1408,7 +1408,10 @@ async function readFGB_fromURL(url) {
     pendingNote:null,
     lastRecordTs:0,
     totalDistance:0,
-    currentPosition:null
+    currentPosition:null,
+    recordStartTs:null,
+    recordStartJst:'',
+    recordStartIso:''
   };
   let surveyNoteContext={ note:null, isNew:false };
 
@@ -1489,6 +1492,36 @@ async function readFGB_fromURL(url) {
     const ss=pad(jst.getUTCSeconds());
     return { timeJst:`${y}-${m}-${d} ${hh}:${mm}:${ss}`, timeIso:`${y}-${m}-${d}T${hh}:${mm}:${ss}+09:00` };
   };
+  const formatJstForFilename=(ts)=>{
+    const pad=n=>String(n).padStart(2,'0');
+    const jst=new Date(ts + 9*60*60*1000);
+    const y=jst.getUTCFullYear();
+    const m=pad(jst.getUTCMonth()+1);
+    const d=pad(jst.getUTCDate());
+    const hh=pad(jst.getUTCHours());
+    const mm=pad(jst.getUTCMinutes());
+    const ss=pad(jst.getUTCSeconds());
+    return `${y}${m}${d}${hh}${mm}${ss}`;
+  };
+  const createBlankSurveyNote=({lon,lat,position=null})=>{
+    const hasTimestamp=position && typeof position.timestamp==='number' && Number.isFinite(position.timestamp);
+    const baseTs=hasTimestamp ? position.timestamp : Date.now();
+    const {timeJst,timeIso}=toJst(baseTs);
+    const altitude=position?.coords?.altitude;
+    const ele=(typeof altitude==='number' && Number.isFinite(altitude))?Number(altitude):null;
+    return {
+      id:'note-'+Date.now(),
+      lon,
+      lat,
+      text1:'',
+      text2:'',
+      capTag:'',
+      labelText:'',
+      ele,
+      timeJst,
+      timeIso
+    };
+  };
   const buildNoteLabel=(note)=>{
     const lines=[];
     if(note.text1) lines.push(note.text1);
@@ -1503,15 +1536,29 @@ async function readFGB_fromURL(url) {
       if(!raw) return [];
       const parsed=JSON.parse(raw);
       if(Array.isArray(parsed)){
-        return parsed.map(n=>({
-          id:n.id||('note-'+Date.now()+Math.random().toString(36).slice(2)),
-          lon:Number(n.lon),
-          lat:Number(n.lat),
-          text1:n.text1||'',
-          text2:n.text2||'',
-          capTag:n.capTag||'',
-          labelText:n.labelText || buildNoteLabel(n)
-        }));
+        return parsed.map(n=>{
+          const rawEle=typeof n.ele==='string'?n.ele.trim():n.ele;
+          const eleValue=(rawEle!==undefined && rawEle!==null && rawEle!=='') && Number.isFinite(Number(rawEle)) ? Number(rawEle) : null;
+          return {
+            id:n.id||('note-'+Date.now()+Math.random().toString(36).slice(2)),
+            lon:Number(n.lon),
+            lat:Number(n.lat),
+            text1:n.text1||'',
+            text2:n.text2||'',
+            capTag:n.capTag||'',
+            labelText:n.labelText || buildNoteLabel(n),
+            ele:eleValue,
+            timeIso:typeof n.timeIso==='string' ? n.timeIso : '',
+            timeJst:typeof n.timeJst==='string' ? n.timeJst : ''
+          };
+        }).map(n=>{
+          if(!n.timeIso || !n.timeJst){
+            const fallback=toJst(Date.now());
+            n.timeIso=n.timeIso||fallback.timeIso;
+            n.timeJst=n.timeJst||fallback.timeJst;
+          }
+          return n;
+        });
       }
     }catch(err){ console.warn('loadStoredSurveyNotes', err); }
     return [];
@@ -1588,6 +1635,9 @@ async function readFGB_fromURL(url) {
     surveyState.notes=[];
     surveyState.totalDistance=0;
     surveyState.lastRecordTs=0;
+    surveyState.recordStartTs=null;
+    surveyState.recordStartJst='';
+    surveyState.recordStartIso='';
     surveyState.awaitingMove=false;
     surveyState.movingNote=null;
     surveyState.manualMode=false;
@@ -1616,8 +1666,14 @@ async function readFGB_fromURL(url) {
   }
   function addTrackPoint(pos){
     const {longitude:lon, latitude:lat, altitude} = pos.coords;
-    const {timeJst,timeIso}=toJst(pos.timestamp||Date.now());
-    const point={ id:'trk-'+(pos.timestamp||Date.now()), lon, lat, ele:altitude ?? 0, timeJst, timeIso, distance:0 };
+    const ts=pos.timestamp||Date.now();
+    const {timeJst,timeIso}=toJst(ts);
+    if(!surveyState.recordStartTs){
+      surveyState.recordStartTs=ts;
+      surveyState.recordStartJst=timeJst;
+      surveyState.recordStartIso=timeIso;
+    }
+    const point={ id:'trk-'+ts, lon, lat, ele:altitude ?? 0, timeJst, timeIso, distance:0 };
     if(surveyState.trackPoints.length){
       const last=surveyState.trackPoints[surveyState.trackPoints.length-1];
       const dist=turf.distance([last.lon,last.lat],[lon,lat],{units:'kilometers'})*1000;
@@ -1692,7 +1748,7 @@ async function readFGB_fromURL(url) {
     if(surveyState.manualMode){
       surveyState.manualMode=false;
       surveyButtons.addManual.classList.remove('toggle-active');
-      const note={ id:'note-'+Date.now(), lon:e.lngLat.lng, lat:e.lngLat.lat, text1:'', text2:'', capTag:'', labelText:'' };
+      const note=createBlankSurveyNote({ lon:e.lngLat.lng, lat:e.lngLat.lat });
       openSurveyNoteForm(note,{isNew:true});
       if(window.__surveyNotePopup){ window.__surveyNotePopup.remove(); window.__surveyNotePopup=null; }
       if(typeof updateMapCursor==='function') updateMapCursor();
@@ -1743,25 +1799,37 @@ async function readFGB_fromURL(url) {
       gpx+='</trkpt>\n';
     });
     gpx+=`    </trkseg>\n  </trk>\n`;
-    surveyState.notes.forEach(n=>{
+    const noteFallbackTime=toJst(Date.now());
+    surveyState.notes.forEach((n,idx)=>{
       const label1=n.text1||'';
       const label2=n.text2||'';
       const capTag=n.capTag||'';
-      const name=label1||label2||'メモ';
-      const descLines=[label1,label2,capTag?`CAP:${capTag}`:''].filter(Boolean);
-      gpx+=`  <wpt lat="${n.lat}" lon="${n.lon}"><name>${escapeXml(name)}</name>`;
-      if(descLines.length){
-        gpx+=`<desc>${escapeXml(descLines.join('\n'))}</desc>`;
-      }
+      const waypointId=idx+1;
+      const eleRaw=typeof n.ele==='number' ? n.ele : Number(n.ele);
+      const eleVal=Number.isFinite(eleRaw) ? eleRaw : 0;
+      const noteTimeIso=(n.timeIso && typeof n.timeIso==='string') ? n.timeIso : noteFallbackTime.timeIso;
+      const noteTimeJst=(n.timeJst && typeof n.timeJst==='string') ? n.timeJst : noteFallbackTime.timeJst;
       const noteExt=[`<label1>${escapeXml(label1)}</label1>`,`<label2>${escapeXml(label2)}</label2>`];
       if(capTag) noteExt.push(`<capTag>${escapeXml(capTag)}</capTag>`);
-      gpx+=`<extensions>${noteExt.join('')}</extensions></wpt>\n`;
+      if(noteTimeJst) noteExt.push(`<time_jst>${escapeXml(noteTimeJst)}</time_jst>`);
+      gpx+=`  <wpt lat="${n.lat}" lon="${n.lon}"><name></name><desc></desc><WayPoint_id>${escapeXml(waypointId)}</WayPoint_id><ele>${escapeXml(eleVal)}</ele><time>${escapeXml(noteTimeIso)}</time><extensions>${noteExt.join('')}</extensions></wpt>\n`;
     });
     gpx+='</gpx>';
     const blob=new Blob([gpx],{type:'application/gpx+xml'});
     const a=document.createElement('a');
     a.href=URL.createObjectURL(blob);
-    a.download='district-survey.gpx';
+    let fileNameTs=surveyState.recordStartTs;
+    if(!fileNameTs && surveyState.recordStartIso){
+      const parsed=Date.parse(surveyState.recordStartIso);
+      if(!Number.isNaN(parsed)) fileNameTs=parsed;
+    }
+    if(!fileNameTs && surveyState.trackPoints.length){
+      const parsed=Date.parse(surveyState.trackPoints[0].timeIso);
+      if(!Number.isNaN(parsed)) fileNameTs=parsed;
+    }
+    if(!fileNameTs) fileNameTs=Date.now();
+    const fileNameBase=formatJstForFilename(fileNameTs);
+    a.download=`${fileNameBase}_phn_field_collab.gpx`;
     a.click();
     surveyFinishEl.style.display='none';
     toast('GPXを出力しました');
@@ -1810,6 +1878,11 @@ async function readFGB_fromURL(url) {
   surveyButtons.start.addEventListener('click',()=>{
     resetSurveyData();
     if(!ensureSurveyWatch()) return;
+    const startTs=Date.now();
+    const {timeJst:recordStartJst,timeIso:recordStartIso}=toJst(startTs);
+    surveyState.recordStartTs=startTs;
+    surveyState.recordStartJst=recordStartJst;
+    surveyState.recordStartIso=recordStartIso;
     surveyState.recording=true;
     surveyState.paused=false;
     toast('記録を開始しました');
@@ -1820,7 +1893,7 @@ async function readFGB_fromURL(url) {
   surveyButtons.addHere.addEventListener('click',()=>{
     if(!surveyState.currentPosition){ toast('現在地が取得できません',true); ensureSurveyWatch(); return; }
     const { longitude:lon, latitude:lat } = surveyState.currentPosition.coords;
-    const note={ id:'note-'+Date.now(), lon, lat, text1:'', text2:'', capTag:'', labelText:'' };
+    const note=createBlankSurveyNote({ lon, lat, position:surveyState.currentPosition });
     openSurveyNoteForm(note,{isNew:true});
   });
   surveyButtons.addManual.addEventListener('click',()=>{
