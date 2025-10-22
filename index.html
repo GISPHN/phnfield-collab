@@ -1304,6 +1304,18 @@ const draw = new MapboxDraw({
   const FGB_URL_EMERGENCY='https://tdoxxwhkvdguyfrofnaw.supabase.co/storage/v1/object/public/data/Designated%20Emergency%20Evacuation%20Site.fgb'; // ←置換（先頭 e）
   const FGB_URL_SHELTER  ='https://tdoxxwhkvdguyfrofnaw.supabase.co/storage/v1/object/public/data/Designated%20Shelter%20for%20Evacuees.fgb';     // ←置換
   const MED_PROXY = 'https://tdoxxwhkvdguyfrofnaw.supabase.co/functions/v1/medical-proxy';
+  // === 医療機関カテゴリ色（P04_001）: 適宜色は調整可 ===
+const MED_COLORS = {
+  // 参考例: 厚労省の区分に合わせて系統色（コード不足は自動割り当て）
+  // 00系 未分類/その他
+  default: '#666666',
+};
+// 動的割当用のパレット
+const MED_PALETTE = ['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#a65628','#f781bf','#999999','#1b9e77','#d95f02','#7570b3','#e7298a'];
+
+// UI用の現在ONなカテゴリ集合（null=全部）
+let MED_FILTER_ON = null; // Set<number> | null
+
   const MEDICAL_SOURCE_ID='medical';
   const MEDICAL_LAYER_POINT='med-circle';
   const MEDICAL_LAYER_LABEL='med-label';
@@ -2062,27 +2074,169 @@ function updateLayerVisibility(){
   function scopeKey(scope){
     return JSON.stringify(normalizeScope(scope));
   }
+function ensureMedicalLayers(){
+  if (map.getSource('medical')) return;
+  map.addSource('medical', { type:'geojson', data: EMPTY_FC, promoteId: 'id' });
 
-  function applyMedicalData(fc,{updateStatus=false}={}){
-    if(!map.getSource(MEDICAL_SOURCE_ID)) return;
-    const feats=Array.isArray(fc?.features)?fc.features:[];
-    const cols=new Set(layerColumns.medical);
-    feats.forEach(f=>Object.keys(f.properties||{}).forEach(k=>cols.add(k)));
-    layerColumns.medical=Array.from(cols).sort((a,b)=>a.localeCompare(b,'ja'));
-    if(layerLabelFields.medical && !layerColumns.medical.includes(layerLabelFields.medical)){
-      layerLabelFields.medical=null;
+  // 点本体（色は後で setPaint で更新）
+  map.addLayer({
+    id:'medical-pt',
+    type:'circle',
+    source:'medical',
+    paint:{
+      'circle-radius': [
+        'interpolate', ['linear'], ['zoom'],
+        8, 2.2, 12, 3.2, 15, 5.2, 18, 7.2
+      ],
+      'circle-color': '#888888',
+      'circle-stroke-color': '#fff',
+      'circle-stroke-width': 1
     }
-    if(!layerLabelFields.medical && layerColumns.medical.includes(DEFAULT_MED_LABEL)){
-      layerLabelFields.medical=DEFAULT_MED_LABEL;
+  }, 'base'); // ベースの上に
+
+  // ラベル（既定: P04_002_ja）
+  map.addLayer({
+    id:'medical-label',
+    type:'symbol',
+    source:'medical',
+    layout:{
+      'text-field': ['coalesce', ['get','P04_002_ja'], ''],
+      'text-size': [
+        'interpolate', ['linear'], ['zoom'],
+        10, 10, 14, 12, 17, 14
+      ],
+      'text-offset': [0, 1.0],
+      'text-anchor': 'top'
+    },
+    paint:{
+      'text-color': '#111',
+      'text-halo-color': '#fff',
+      'text-halo-width': 1.2,
+      'text-halo-blur': 0.5
     }
-    const labelField=layerLabelFields.medical;
-    const decorated=feats.map(f=>decorateFeature(f,labelField));
-    map.getSource(MEDICAL_SOURCE_ID).setData({type:'FeatureCollection',features:decorated});
-    if(updateStatus){
-      const count=feats.length||0;
-      setMedicalStatus(`表示件数: ${count.toLocaleString()}件`);
-    }
+  });
+}
+
+function applyMedicalData(fc){
+  ensureMedicalLayers();
+
+  // 1) ソースに反映
+  const src = map.getSource('medical');
+  if (src) src.setData(fc || EMPTY_FC);
+
+  // 2) カテゴリ（P04_001）を収集して色を決める
+  const feats = (fc && fc.features) ? fc.features : [];
+  const cats = [...new Set(feats.map(f => Number(f.properties?.P04_001)).filter(n => Number.isFinite(n)))].sort((a,b)=>a-b);
+
+  // 既に決まってないコードへパレット割当
+  const colorMap = {};
+  let pi = 0;
+  for (const c of cats){
+    colorMap[c] = MED_COLORS[c] || MED_PALETTE[pi % MED_PALETTE.length];
+    pi++;
   }
+
+  // 3) 色スケールを circle-color に適用（match 式）
+  const matchExpr = ['match', ['to-number',['get','P04_001']]];
+  for (const c of cats){
+    matchExpr.push(c, colorMap[c]);
+  }
+  matchExpr.push(MED_COLORS.default); // default
+
+  map.setPaintProperty('medical-pt', 'circle-color', matchExpr);
+
+  // 4) ✔フィルタUIを生成/更新（浮動パネル、自動設置）
+  buildMedicalFilterUI(cats, colorMap);
+
+  // 5) もし MED_FILTER_ON が null なら「全部ON」
+  if (!(MED_FILTER_ON instanceof Set)) MED_FILTER_ON = null;
+  applyMedicalCategoryFilter();
+}
+function buildMedicalFilterUI(cats, colorMap){
+  let pane = document.getElementById('medical-filter-pane');
+  if (!pane){
+    pane = document.createElement('div');
+    pane.id = 'medical-filter-pane';
+    pane.style.position = 'absolute';
+    pane.style.left = '12px';
+    pane.style.top  = '260px'; // 左パネルの下あたり。必要なら調整
+    pane.style.zIndex = 5;
+    pane.style.background = 'rgba(255,255,255,0.9)';
+    pane.style.boxShadow = '0 2px 8px rgba(0,0,0,.15)';
+    pane.style.borderRadius = '8px';
+    pane.style.padding = '8px 10px';
+    pane.style.fontSize = '12px';
+    pane.style.maxWidth = '240px';
+    pane.style.backdropFilter = 'saturate(120%) blur(2px)';
+    pane.innerHTML = '<div style="font-weight:600;margin-bottom:6px">医療機関カテゴリ</div>';
+    document.body.appendChild(pane);
+  }else{
+    // ヘッダ以外を消す
+    pane.innerHTML = '<div style="font-weight:600;margin-bottom:6px">医療機関カテゴリ</div>';
+  }
+
+  const allRow = document.createElement('div');
+  allRow.style.marginBottom = '4px';
+  const allId = 'medcat-all';
+  allRow.innerHTML = `
+    <label style="cursor:pointer">
+      <input type="checkbox" id="${allId}" ${MED_FILTER_ON? '' : 'checked'}>
+      <span>すべて表示</span>
+    </label>`;
+  pane.appendChild(allRow);
+
+  document.getElementById(allId).onchange = (e)=>{
+    if (e.target.checked){ MED_FILTER_ON = null; }
+    else { MED_FILTER_ON = new Set(); } // 全OFF
+    applyMedicalCategoryFilter();
+  };
+
+  const list = document.createElement('div');
+  list.style.display = 'grid';
+  list.style.gridTemplateColumns = '1fr';
+  list.style.gap = '2px';
+  pane.appendChild(list);
+
+  cats.forEach(c=>{
+    const id = `medcat-${c}`;
+    const row = document.createElement('div');
+    row.innerHTML = `
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+        <span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:${colorMap[c]};border:1px solid #888"></span>
+        <input type="checkbox" id="${id}" ${(!MED_FILTER_ON || MED_FILTER_ON.has(c)) ? 'checked':''}>
+        <span>コード ${c}</span>
+      </label>`;
+    list.appendChild(row);
+
+    row.querySelector('input').onchange = (e)=>{
+      if (!MED_FILTER_ON) MED_FILTER_ON = new Set(cats); // 初めて触ったら「個別モード」へ
+      if (e.target.checked) MED_FILTER_ON.add(c);
+      else MED_FILTER_ON.delete(c);
+      // 「全部ON」に戻ったら Set を null にする
+      if (MED_FILTER_ON.size === cats.length) MED_FILTER_ON = null;
+      // 「全部OFF」は許可（空集合）
+      // 上の「すべて表示」チェックは都度リフレッシュ
+      applyMedicalCategoryFilter();
+      buildMedicalFilterUI(cats, colorMap); // チェック表示更新
+    };
+  });
+}
+
+function applyMedicalCategoryFilter(){
+  // MED_FILTER_ON === null → 全部表示
+  if (MED_FILTER_ON === null){
+    map.setFilter('medical-pt', null);
+    map.setFilter('medical-label', null);
+    setMedicalStatus('表示中', { ok:true });
+    return;
+  }
+  const allow = Array.from(MED_FILTER_ON.values());
+  const filter = ['in', ['to-number',['get','P04_001']], ['literal', allow]];
+  map.setFilter('medical-pt', filter);
+  map.setFilter('medical-label', filter);
+  setMedicalStatus(`表示中（カテゴリ ${allow.length} 件）`, { ok:true });
+}
+
 
   function normalizeMedicalResponse(data){
     let fc=null;
@@ -2095,11 +2249,20 @@ function updateLayerVisibility(){
     return fc;
   }
 
-// ここから置換
+// === 医療機関読み込み（GET /medical-proxy）: ズームに応じて z を可変、bbox キーでキャッシュ ===
 async function fetchMedicalData(scope, key){
+  if (!MED_PROXY) return EMPTY_FC;
+
+  // 画面範囲 bbox
   const b = map.getBounds();
   const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
     .map(n => Number(n.toFixed(6))).join(',');
+
+  // ★ズームに応じてAPIの z を可変（粗いとタイル減→速い、細かいと取りこぼし減）
+  const zNow = Math.round(map.getZoom());
+  const z = Math.max(11, Math.min(15, zNow)); // 11〜15 にクランプ
+
+  // cityCsv（前方一致フィルタ）
   let cityCsv = '';
   const ns = normalizeScope(scope);
   if (ns.mode === 'muni' && ns.munis.length){
@@ -2107,20 +2270,23 @@ async function fetchMedicalData(scope, key){
   }else if (ns.mode === 'pref' && ns.prefs.length){
     cityCsv = ns.prefs.map(p => `${p} `).join(',');
   }
-  const url = `${MED_PROXY}?bbox=${encodeURIComponent(bbox)}&z=14`
-            + (cityCsv ? `&city=${encodeURIComponent(cityCsv)}` : '');
+
+  const url = `${MED_PROXY}?bbox=${encodeURIComponent(bbox)}&z=${z}` +
+              (cityCsv ? `&city=${encodeURIComponent(cityCsv)}` : '');
 
   setMedicalStatus('読込中…', { loading: true });
+
   try{
-    // ← 置換：Edge Function が JWT 検証を要求しても通るように anon キーを付与
-const res = await fetch(url, {
-  method: 'GET',
-  headers: {
-    'Authorization': `Bearer ${SUPABASE_ANON}`
-  }
-});
-    if (!res.ok) throw new Error(`${res.status} ${await res.text().catch(()=>res.statusText)}`);
-    const fc = normalizeMedicalResponse(await res.json().catch(()=>({})));
+    const res = await fetch(url, {
+      method:'GET',
+      headers:{ 'Authorization': `Bearer ${SUPABASE_ANON}` } // 401 回避
+    });
+    if (!res.ok){
+      const t = await res.text().catch(()=>res.statusText);
+      throw new Error(`${res.status} ${t || res.statusText}`);
+    }
+    const data = await res.json().catch(()=>({ type:'FeatureCollection', features:[] }));
+    const fc = normalizeMedicalResponse(data);
     medicalCache.set(key, fc);
     return fc;
   }catch(err){
@@ -2135,6 +2301,11 @@ const res = await fetch(url, {
     if(!map.getSource(MEDICAL_SOURCE_ID)) return;
 const scope = getScopeFor('medical');
 const keyBase = scopeKey(scope);
+const b = map.getBounds();
+const bboxKey = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
+  .map(n => Number(n.toFixed(3))).join(',');
+const key = `${keyBase}|${bboxKey}`;
+
 
 // いまの地図範囲もキーに混ぜて、範囲が変われば再取得されるようにする
 const b = map.getBounds();
