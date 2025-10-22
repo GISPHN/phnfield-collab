@@ -1330,10 +1330,9 @@ const MED_PALETTE = ['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#a65628'
 // UI用の現在ONなカテゴリ集合（null=全部）
 let MED_FILTER_ON = null; // Set<number> | null
 
-  const MEDICAL_SOURCE_ID='medical';
-　const MEDICAL_LAYER_POINT='medical-pt';
-　const MEDICAL_LAYER_LABEL='medical-label';
-
+const MEDICAL_SOURCE_ID = 'medical';
+const MEDICAL_LAYER_POINT = 'medical-pt';
+const MEDICAL_LAYER_LABEL = 'medical-label';
 
 // 自己ホストした flatgeobuf を “必ず最初に” 読みにいく
 const LOCAL_FGB_LIB = './flatgeobuf-geojson.min.js';
@@ -2023,21 +2022,29 @@ async function readFGB_fromURL(url) {
   updateSurveyStatus();
 
 
-function updateLayerVisibility()
-  if (!map.getLayer(MEDICAL_LAYER_POINT) || !map.getLayer(MEDICAL_LAYER_LABEL)) return;
-  const ev = $('chkEmergency').checked ? 'visible' : 'none';
-  const sv = $('chkShelter').checked  ? 'visible' : 'none';
-  const mv = $('chkMedical')?.checked ? 'visible' : 'none';
-  if(map.getLayer('emg-circle'))  map.setLayoutProperty('emg-circle','visibility', ev);
-  if(map.getLayer('shel-circle')) map.setLayoutProperty('shel-circle','visibility', sv);
-  if(map.getLayer(MEDICAL_LAYER_POINT)) map.setLayoutProperty(MEDICAL_LAYER_POINT,'visibility', mv||'none');
+function updateLayerVisibility(){
+  // レイヤが未作成なら何もしない
+  const hasMedPt = !!map.getLayer(MEDICAL_LAYER_POINT);
+  const hasMedLb = !!map.getLayer(MEDICAL_LAYER_LABEL);
+  if (!hasMedPt || !hasMedLb) return;
+
+  const ev = $('chkEmergency')?.checked ? 'visible' : 'none';
+  const sv = $('chkShelter')?.checked  ? 'visible' : 'none';
+  const mv = $('chkMedical')?.checked  ? 'visible' : 'none';
+
+  if (map.getLayer('emg-circle'))  map.setLayoutProperty('emg-circle', 'visibility', ev);
+  if (map.getLayer('shel-circle')) map.setLayoutProperty('shel-circle','visibility', sv);
+  if (map.getLayer(MEDICAL_LAYER_POINT)) map.setLayoutProperty(MEDICAL_LAYER_POINT, 'visibility', mv);
+
   const evLabel = (ev==='visible' && layerLabelFields.emergency) ? 'visible' : 'none';
-  const svLabel = (sv==='visible' && layerLabelFields.shelter) ? 'visible' : 'none';
-  const mvLabel = (mv==='visible' && layerLabelFields.medical) ? 'visible' : 'none';
-  if(map.getLayer('emg-label'))   map.setLayoutProperty('emg-label','visibility', evLabel);
-  if(map.getLayer('shel-label'))  map.setLayoutProperty('shel-label','visibility', svLabel);
-  if(map.getLayer(MEDICAL_LAYER_LABEL)) map.setLayoutProperty(MEDICAL_LAYER_LABEL,'visibility', mvLabel||'none');
+  const svLabel = (sv==='visible' && layerLabelFields.shelter)   ? 'visible' : 'none';
+  const mvLabel = (mv==='visible' && layerLabelFields.medical)   ? 'visible' : 'none';
+
+  if (map.getLayer('emg-label'))   map.setLayoutProperty('emg-label',   'visibility', evLabel);
+  if (map.getLayer('shel-label'))  map.setLayoutProperty('shel-label',  'visibility', svLabel);
+  if (map.getLayer(MEDICAL_LAYER_LABEL)) map.setLayoutProperty(MEDICAL_LAYER_LABEL, 'visibility', mvLabel);
 }
+
 
   function fitToData(){
     const srcE=map.getSource('emergency');
@@ -2144,20 +2151,15 @@ function applyMedicalData(fc, opts = {}) {
   if (!src) return;
 
   const feats = (fc && Array.isArray(fc.features)) ? fc.features : [];
-
-  // 1) ソースに流し込む（空でも必ずセット）
   src.setData({ type: 'FeatureCollection', features: feats });
 
-  // 2) ラベル既定（P04_002_ja）
+  // 既定ラベル = P04_002_ja
   if (map.getLayer(MEDICAL_LAYER_LABEL)) {
-    map.setLayoutProperty(
-      MEDICAL_LAYER_LABEL,
-      'text-field',
-      ['coalesce', ['get', 'P04_002_ja'], '']  // 既定ラベル
-    );
+    map.setLayoutProperty(MEDICAL_LAYER_LABEL, 'text-field',
+      ['coalesce', ['get','P04_002_ja'], '']);
   }
 
-  // 3) 色分け用カテゴリー収集（P04_001）
+  // P04_001 ごとの色割当
   const catsSet = new Set();
   for (const f of feats) {
     const c = String(f?.properties?.P04_001 ?? '');
@@ -2165,40 +2167,43 @@ function applyMedicalData(fc, opts = {}) {
   }
   const cats = Array.from(catsSet);
 
-  // 4) 色の式（データ0件なら単色、1件以上なら match で色分け）
-  const defaultColor = '#666';  // デフォルト色
-  let colorExpr = defaultColor;
+  const defaultColor = '#666';
+  const palette = ['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#a65628','#f781bf','#999999','#1b9e77','#d95f02','#7570b3','#e7298a'];
 
-  if (cats.length > 0) {
-    // MED_COLORS に無いコードは簡単なパレットで自動割当
-    const palette = ['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#a65628','#f781bf','#999999'];
-    let i = 0;
-    const pairs = [];
-    for (const code of cats) {
-      const col = (MED_COLORS && MED_COLORS[code]) ? MED_COLORS[code] : palette[i++ % palette.length];
-      pairs.push(code, col);
-    }
-    // ['match', ['to-string',['get','P04_001']], code1, color1, ..., default]
-    colorExpr = ['match', ['to-string', ['get', 'P04_001']], ...pairs, defaultColor];
+  // コード→色の辞書
+  const colorMap = {};
+  let i = 0;
+  for (const code of cats) {
+    colorMap[code] = (MED_COLORS && MED_COLORS[code]) ? MED_COLORS[code] : palette[i++ % palette.length];
   }
 
-  // 5) レイヤに反映（レイヤが無ければ何もしない）
+  // circle-color の式
+  let colorExpr = defaultColor;
+  if (cats.length > 0) {
+    const pairs = [];
+    for (const code of cats) pairs.push(code, colorMap[code]);
+    colorExpr = ['match', ['to-string', ['get','P04_001']], ...pairs, defaultColor];
+  }
+
   if (map.getLayer(MEDICAL_LAYER_POINT)) {
     map.setPaintProperty(MEDICAL_LAYER_POINT, 'circle-color', colorExpr);
-    map.setPaintProperty(MEDICAL_LAYER_POINT, 'circle-radius', 5);
+    map.setPaintProperty(MEDICAL_LAYER_POINT, 'circle-radius',
+      ['interpolate', ['linear'], ['zoom'], 8, 2.2, 12, 3.2, 15, 5.2, 18, 7.2]);
     map.setPaintProperty(MEDICAL_LAYER_POINT, 'circle-stroke-color', '#fff');
     map.setPaintProperty(MEDICAL_LAYER_POINT, 'circle-stroke-width', 1);
   }
 
-  // 6) 既存のカテゴリ・フィルタUIを再構築（存在する実装を呼ぶ）
-  if (typeof buildMedicalFilterUI === 'function') buildMedicalFilterUI(cats);
+  // カテゴリチェック UI を再構築
+  if (typeof buildMedicalFilterUI === 'function') buildMedicalFilterUI(cats, colorMap);
+
+  // 既存のフィルタ状態を適用
   if (typeof applyMedicalCategoryFilter === 'function') applyMedicalCategoryFilter();
 
-  // 7) ステータス表示の更新
   if (opts.updateStatus && typeof setMedicalStatus === 'function') {
     setMedicalStatus(feats.length ? '' : '該当なし');
   }
 }
+
 
 function buildMedicalFilterUI(cats, colorMap){
   let pane = document.getElementById('medical-filter-pane');
@@ -2250,7 +2255,7 @@ function buildMedicalFilterUI(cats, colorMap){
     const row = document.createElement('div');
     row.innerHTML = `
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-        <span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:${colorMap[c]};border:1px solid #888"></span>
+        <span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:${(colorMap && colorMap[c]) ? colorMap[c] : '#999'};border:1px solid #888"></span>
         <input type="checkbox" id="${id}" ${(!MED_FILTER_ON || MED_FILTER_ON.has(c)) ? 'checked':''}>
         <span>コード ${c}</span>
       </label>`;
@@ -2279,10 +2284,10 @@ function applyMedicalCategoryFilter(){
     setMedicalStatus('表示中', { ok:true });
     return;
   }
-  const allow = Array.from(MED_FILTER_ON.values());
-  const filter = ['in', ['to-number',['get','P04_001']], ['literal', allow]];
-  map.setFilter('medical-pt', filter);
-  map.setFilter('medical-label', filter);
+const allow = Array.from(MED_FILTER_ON.values()).map(v => String(v));
+const filter = ['in', ['to-string', ['get','P04_001']], ['literal', allow]];
+map.setFilter('medical-pt', filter);
+map.setFilter('medical-label', filter);
   setMedicalStatus(`表示中（カテゴリ ${allow.length} 件）`, { ok:true });
 }
 
