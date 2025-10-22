@@ -2085,35 +2085,51 @@ function updateLayerVisibility(){
     return fc;
   }
 
-  async function fetchMedicalData(scope,key){
-    if(!MED_PROXY) return EMPTY_FC;
-    if(medicalAbortController){
-      medicalAbortController.abort();
+// ここから置換
+async function fetchMedicalData(scope, key){
+  // Edge Function は GET で bbox / city を受け取る実装
+  if (!MED_PROXY) return EMPTY_FC;
+
+  // いまの地図範囲から bbox を作る（minX,minY,maxX,maxY）
+  const b = map.getBounds(); // MapLibre
+  const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
+    .map(n => Number(n.toFixed(6))).join(',');
+
+  // 市区町村の前方一致フィルタ用 CSV（「都道府県 市区町村」形式）
+  // scope.munis が空なら（= 都道府県だけ指定 or 全国）空文字にして Edge 側で無フィルタにする
+  let cityCsv = '';
+  const ns = normalizeScope(scope);
+  if (ns.mode === 'muni' && ns.munis.length){
+    cityCsv = ns.munis.join(',');
+  }else if (ns.mode === 'pref' && ns.prefs.length){
+    // 都道府県のみ指定時は、その都道府県名で前方一致（例：「東京都 」）
+    cityCsv = ns.prefs.map(p => `${p} `).join(',');
+  }
+
+  // Edge Function は z パラメータが無くても既定 14 で動作するが明示しておく
+  const url = `${MED_PROXY}?bbox=${encodeURIComponent(bbox)}&z=14` +
+              (cityCsv ? `&city=${encodeURIComponent(cityCsv)}` : '');
+
+  setMedicalStatus('読込中…', { loading: true });
+
+  try{
+    const res = await fetch(url, { method:'GET' });
+    if (!res.ok){
+      const t = await res.text().catch(()=>res.statusText);
+      throw new Error(`${res.status} ${t || res.statusText}`);
     }
-    const controller=new AbortController();
-    medicalAbortController=controller;
-    try{
-      const payload=normalizeScope(scope);
-      if(controller.signal.aborted){
-        throw new DOMException('Aborted','AbortError');
-      }
-      setMedicalStatus('読込中…',{loading:true});
-      const tryInvoke=async()=>{
-        if(!window.__supa?.functions?.invoke) return null;
-        if(controller.signal.aborted){
-          throw new DOMException('Aborted','AbortError');
-        }
-        const { data, error } = await window.__supa.functions.invoke('medical-proxy',{ body: payload });
-        if(controller.signal.aborted){
-          throw new DOMException('Aborted','AbortError');
-        }
-        if(error){
-          const err=error instanceof Error?error:new Error(error?.message||'Invoke failed');
-          err.__fromInvoke=true;
-          throw err;
-        }
-        return normalizeMedicalResponse(data);
-      };
+    const data = await res.json().catch(()=>({ type:'FeatureCollection', features:[] }));
+    const fc = normalizeMedicalResponse(data);
+    medicalCache.set(key, fc);
+    return fc;
+  }catch(err){
+    console.warn('[medical] fetch failed ->', err);
+    setMedicalStatus('読込に失敗しました', { error:true });
+    return null;
+  }
+}
+// ここまで置換
+
       const tryFetch=async(headers)=>{
         if(controller.signal.aborted){
           throw new DOMException('Aborted','AbortError');
@@ -2213,8 +2229,15 @@ function updateLayerVisibility(){
 
   async function refreshMedicalLayer(){
     if(!map.getSource(MEDICAL_SOURCE_ID)) return;
-    const scope=getScopeFor('medical');
-    const key=scopeKey(scope);
+const scope = getScopeFor('medical');
+const keyBase = scopeKey(scope);
+
+// いまの地図範囲もキーに混ぜて、範囲が変われば再取得されるようにする
+const b = map.getBounds();
+const bboxKey = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
+  .map(n => Number(n.toFixed(3))).join(',');
+const key = `${keyBase}|${bboxKey}`;
+
     const shouldLoad=$('chkMedical')?.checked;
     if(!shouldLoad){
       setMedicalStatus('');
