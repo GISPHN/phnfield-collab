@@ -1464,6 +1464,20 @@ async function readFGB_fromURL(url) {
       medicalStatusEl.style.color='#64748b';
     }
   }
+  async function resolveSupabaseAccessToken(){
+    if(!window.__supa?.auth?.getSession) return null;
+    try{
+      const { data, error } = await window.__supa.auth.getSession();
+      if(error){
+        console.warn('[medical] getSession error ->', error);
+        return null;
+      }
+      return data?.session?.access_token || null;
+    }catch(err){
+      console.warn('[medical] getSession failed ->', err);
+      return null;
+    }
+  }
   window.__surveyNotePopup=null;
   makeDraggable(surveyPanelEl);
   makeDraggable(surveyNotePanelEl);
@@ -2071,9 +2085,21 @@ function updateLayerVisibility(){
     try{
       const payload=normalizeScope(scope);
       const headers={'Content-Type':'application/json'};
+      let bearerToken=null;
+      if(window.__supa?.auth?.getSession){
+        bearerToken=await resolveSupabaseAccessToken();
+      }
+      if(!bearerToken && SUPABASE_ANON){
+        bearerToken=SUPABASE_ANON;
+      }
       if(SUPABASE_ANON){
         headers.apikey=SUPABASE_ANON;
-        headers.Authorization=`Bearer ${SUPABASE_ANON}`;
+      }
+      if(bearerToken){
+        headers.Authorization=`Bearer ${bearerToken}`;
+      }
+      if(controller.signal.aborted){
+        throw new DOMException('Aborted','AbortError');
       }
       const resp=await fetch(MED_PROXY,{
         method:'POST',
@@ -2111,8 +2137,13 @@ function updateLayerVisibility(){
       if(err.name==='AbortError'){
         return null;
       }
-      setMedicalStatus('読込に失敗しました',{error:true});
-      throw new Error(err.message||'医療機関APIエラー');
+      const msg=String(err.message||'');
+      if(msg.includes('401')||msg.includes('403')){
+        setMedicalStatus('認証エラー：再ログインしてください',{error:true});
+      }else{
+        setMedicalStatus('読込に失敗しました',{error:true});
+      }
+      throw new Error(msg||'医療機関APIエラー');
     }finally{
       if(medicalAbortController===controller){
         medicalAbortController=null;
