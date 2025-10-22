@@ -2492,6 +2492,24 @@ async function fetchMedicalData(scope, key){
     if(!map.getLayer('shel-label'))  map.addLayer({id:'shel-label',type:'symbol',source:'shelter',  layout:{ visibility:'none','text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top'},paint:{'text-halo-width':1.2,'text-halo-color':'#fff'}});
         bindClickPopup('emg-circle'); bindClickPopup('shel-circle'); bindClickPopup(MEDICAL_LAYER_POINT);
       ['chkEmergency','chkShelter','chkMedical'].forEach(id=>$(id)?.addEventListener('change',()=>{
+         // ← 途中で切れていた無名関数を閉じつつ完成させる
+  // ハザードのON/OFFは表示だけ切り替える
+  if (id === 'chkEmergency' || id === 'chkShelter') {
+    updateLayerVisibility();
+  }
+}));
+  
+// 医療機関チェックはONになったら取得して描画、OFFなら消す
+$('chkMedical')?.addEventListener('change', ()=>{
+  if ($('chkMedical').checked) {
+    refreshMedicalLayer();            // ← 取得→レイヤに反映
+  } else {
+    setMedicalStatus('');             // ステータス消す
+    updateLayerVisibility();          // 表示だけOFF
+    const src = map.getSource('medical');
+    if (src) src.setData({type:'FeatureCollection',features:[]});
+  }
+});
   refreshLayers();
   ensureOverlayOrder(); // ← 追加
 }));
@@ -3896,6 +3914,9 @@ refreshObjList();
   window.pushFeature = (f)=>{ _push(f); };
   const _rm = window.removeFeature;
   window.removeFeature = (f,opts)=>{ _rm(f,opts); };
+initFGB()                 // 避難施設レイヤの初期化
+  .then(()=>updateLayerVisibility())
+  .catch(e=>console.warn('initFGB failed', e));
 </script>
 
 </body>
