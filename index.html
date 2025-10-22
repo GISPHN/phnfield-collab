@@ -2491,28 +2491,26 @@ async function fetchMedicalData(scope, key){
 });
     if(!map.getLayer('shel-label'))  map.addLayer({id:'shel-label',type:'symbol',source:'shelter',  layout:{ visibility:'none','text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top'},paint:{'text-halo-width':1.2,'text-halo-color':'#fff'}});
         bindClickPopup('emg-circle'); bindClickPopup('shel-circle'); bindClickPopup(MEDICAL_LAYER_POINT);
-      ['chkEmergency','chkShelter','chkMedical'].forEach(id=>$(id)?.addEventListener('change',()=>{
-         // ← 途中で切れていた無名関数を閉じつつ完成させる
-  // ハザードのON/OFFは表示だけ切り替える
-  if (id === 'chkEmergency' || id === 'chkShelter') {
+['chkEmergency','chkShelter','chkMedical'].forEach(id=>{
+  const el = $(id);
+  if (!el) return;
+  el.addEventListener('change', ()=>{
+    // 可視状態の反映
     updateLayerVisibility();
-  }
-}));
-  
-// 医療機関チェックはONになったら取得して描画、OFFなら消す
-$('chkMedical')?.addEventListener('change', ()=>{
-  if ($('chkMedical').checked) {
-    refreshMedicalLayer();            // ← 取得→レイヤに反映
-  } else {
-    setMedicalStatus('');             // ステータス消す
-    updateLayerVisibility();          // 表示だけOFF
-    const src = map.getSource('medical');
-    if (src) src.setData({type:'FeatureCollection',features:[]});
-  }
+    // 医療機関はON時のみデータを取得して反映
+    if (id === 'chkMedical' && $('chkMedical').checked) {
+      refreshMedicalLayer();
+    } else if (id === 'chkMedical' && !$('chkMedical').checked) {
+      // OFFのときはデータを空にしておく
+      const src = map.getSource('medical');
+      if (src) src.setData({ type:'FeatureCollection', features:[] });
+      setMedicalStatus('');
+    }
+    // 重ね順の補正
+    ensureOverlayOrder();
+  });
 });
-  refreshLayers();
-  ensureOverlayOrder(); // ← 追加
-}));
+
 
 
       document.querySelectorAll('input[name="areaMode"]').forEach(r=>{
@@ -2554,7 +2552,6 @@ $('chkMedical')?.addEventListener('change', ()=>{
         btn.addEventListener('click',()=>openExtentPanel(btn.dataset.layer));
       });
       $('btnExtentCancel').onclick=()=>{ extentPanel.style.display='none'; };
-      $('btnExtentCancel').onclick = () => { extentPanel.style.display = 'none'; };
 
 $('btnExtentConfirm').onclick = () => {
   const scope = readScopeFromUI();
@@ -2645,7 +2642,6 @@ $('btnExtentConfirm').onclick = () => {
 
       // 都道府県セレクト
       PREFS.forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;$('prefSelect').appendChild(o);});
-      $('prefSelect').addEventListener('change',renderMuniOptions);
 
     // FGB 読み込み
     try{
@@ -2682,6 +2678,7 @@ $('btnExtentConfirm').onclick = () => {
         updateSuggest($('qMuni').value);
       }
       window.renderMuniOptions=renderMuniOptions;
+      $('prefSelect').addEventListener('change', renderMuniOptions);
       $('qMuni').addEventListener('input',()=>updateSuggest($('qMuni').value));
       $('qMuni').addEventListener('blur',()=>setTimeout(hideSuggest,150));
       $('qMuni').addEventListener('keydown',(ev)=>{if(ev.key==='Enter'){const val=$('qMuni').value;if(val){updateSuggest(val);}}});
