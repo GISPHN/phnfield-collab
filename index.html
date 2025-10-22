@@ -1156,8 +1156,10 @@ map.on('load', () => {
   try {
     ensureMedicalLayers();
     updateLayerVisibility(); // チェック状態を反映
+    ensureOverlayOrder();    // ← これを追加
   } catch(e) { console.warn(e); }
 });
+
 // 地図操作で医療機関を再取得
 ['moveend','zoomend','dragend'].forEach(ev=>{
   map.on(ev, () => {
@@ -1166,12 +1168,20 @@ map.on('load', () => {
 });
 
 const overlayLayerOrder=[
+  // まずユーザー描画系
   'user-temp-fill','user-temp-line',
   'user-poly-fill','user-poly-line','user-line','user-line-label','user-poly-label','user-circle-label',
   'user-point-emoji','user-point-label',
+  // 医療機関（点・ラベル）
+  'medical-pt','medical-label',
+  // 避難施設（点・ラベル）
+  'emg-circle','emg-label',
+  'shel-circle','shel-label',
+  // 踏査ログ
   'survey-track-line','survey-track-points',
   'survey-notes-icon','survey-notes-label'
 ];
+
 function ensureOverlayOrder(){
   overlayLayerOrder.forEach(id=>{ if(map.getLayer(id)) map.moveLayer(id); });
 }
@@ -2098,15 +2108,16 @@ function updateLayerVisibility(){
     return JSON.stringify(normalizeScope(scope));
   }
 function ensureMedicalLayers(){
-  // Map の style がまだなら load 待ち
-if (!map || !map.getStyle || !map.isStyleLoaded || !map.isStyleLoaded()) {
-  map.once('load', () => ensureMedicalLayers());
-  return;
-}
+  // スタイル準備待ち
+  if (!map || !map.getStyle || !map.isStyleLoaded || !map.isStyleLoaded()) {
+    map.once('load', () => ensureMedicalLayers());
+    return;
+  }
   if (map.getSource('medical')) return;
+
   map.addSource('medical', { type:'geojson', data: EMPTY_FC, promoteId: 'id' });
 
-  // 点本体（色は後で setPaint で更新）
+  // ▼▼ ここがポイント：第二引数 'base' を付けない（= ベースより上に出す） ▼▼
   map.addLayer({
     id:'medical-pt',
     type:'circle',
@@ -2120,9 +2131,8 @@ if (!map || !map.getStyle || !map.isStyleLoaded || !map.isStyleLoaded()) {
       'circle-stroke-color': '#fff',
       'circle-stroke-width': 1
     }
-  }, 'base'); // ベースの上に
+  }); // ← 第2引数を削除
 
-  // ラベル（既定: P04_002_ja）
   map.addLayer({
     id:'medical-label',
     type:'symbol',
@@ -2143,7 +2153,11 @@ if (!map || !map.getStyle || !map.isStyleLoaded || !map.isStyleLoaded()) {
       'text-halo-blur': 0.5
     }
   });
+
+  // 上に乗せたい順序に並べ直す
+  ensureOverlayOrder();
 }
+
 
 function applyMedicalData(fc, opts = {}) {
   ensureMedicalLayers();
@@ -2477,7 +2491,11 @@ async function fetchMedicalData(scope, key){
 });
     if(!map.getLayer('shel-label'))  map.addLayer({id:'shel-label',type:'symbol',source:'shelter',  layout:{ visibility:'none','text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top'},paint:{'text-halo-width':1.2,'text-halo-color':'#fff'}});
         bindClickPopup('emg-circle'); bindClickPopup('shel-circle'); bindClickPopup(MEDICAL_LAYER_POINT);
-      ['chkEmergency','chkShelter','chkMedical'].forEach(id=>$(id)?.addEventListener('change',()=>{ refreshLayers(); }));
+      ['chkEmergency','chkShelter','chkMedical'].forEach(id=>$(id)?.addEventListener('change',()=>{
+  refreshLayers();
+  ensureOverlayOrder(); // ← 追加
+}));
+
 
       document.querySelectorAll('input[name="areaMode"]').forEach(r=>{
         r.addEventListener('change',()=>{
