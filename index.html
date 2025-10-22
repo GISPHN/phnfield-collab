@@ -2074,6 +2074,17 @@ function updateLayerVisibility(){
     }
   }
 
+  function normalizeMedicalResponse(data){
+    let fc=null;
+    if(data?.type==='FeatureCollection') fc=data;
+    else if(data?.data?.type==='FeatureCollection') fc=data.data;
+    else if(Array.isArray(data?.features)) fc={type:'FeatureCollection',features:data.features};
+    else if(Array.isArray(data)) fc={type:'FeatureCollection',features:data};
+    if(!fc) fc={...EMPTY_FC};
+    if(!Array.isArray(fc.features)) fc.features=[];
+    return fc;
+  }
+
   async function fetchMedicalData(scope,key){
     if(!MED_PROXY) return EMPTY_FC;
     if(medicalAbortController){
@@ -2083,51 +2094,97 @@ function updateLayerVisibility(){
     medicalAbortController=controller;
     try{
       const payload=normalizeScope(scope);
-      const headers={'Content-Type':'application/json'};
-      let bearerToken=null;
-      if(window.__supa?.auth?.getSession){
-        bearerToken=await resolveSupabaseAccessToken();
-      }
-      if(SUPABASE_ANON){
-        headers.apikey=SUPABASE_ANON;
-      }
-      if(bearerToken){
-        headers.Authorization=`Bearer ${bearerToken}`;
-      }
       if(controller.signal.aborted){
         throw new DOMException('Aborted','AbortError');
       }
       setMedicalStatus('読込中…',{loading:true});
-      const resp=await fetch(MED_PROXY,{
-        method:'POST',
-        headers,
-        body:JSON.stringify(payload),
-        signal:controller.signal
-      });
-      if(resp.status===204){
-        medicalCache.set(key,EMPTY_FC);
-        return EMPTY_FC;
-      }
-      if(!resp.ok){
-        const text=await resp.text().catch(()=>resp.statusText);
-        throw new Error(`${resp.status} ${text||resp.statusText}`.trim());
-      }
-      let data=null;
-      const contentType=resp.headers.get('content-type')||'';
-      if(contentType.includes('application/json')){
-        data=await resp.json();
-      }else{
-        const text=await resp.text();
-        try{ data=text?JSON.parse(text):null; }
-        catch(_){ data=null; }
-      }
+      const tryInvoke=async()=>{
+        if(!window.__supa?.functions?.invoke) return null;
+        if(controller.signal.aborted){
+          throw new DOMException('Aborted','AbortError');
+        }
+        const { data, error } = await window.__supa.functions.invoke('medical-proxy',{ body: payload });
+        if(controller.signal.aborted){
+          throw new DOMException('Aborted','AbortError');
+        }
+        if(error){
+          const err=error instanceof Error?error:new Error(error?.message||'Invoke failed');
+          err.__fromInvoke=true;
+          throw err;
+        }
+        return normalizeMedicalResponse(data);
+      };
+      const tryFetch=async(headers)=>{
+        if(controller.signal.aborted){
+          throw new DOMException('Aborted','AbortError');
+        }
+        const resp=await fetch(MED_PROXY,{
+          method:'POST',
+          headers,
+          body:JSON.stringify(payload),
+          signal:controller.signal
+        });
+        if(resp.status===204){
+          return EMPTY_FC;
+        }
+        if(!resp.ok){
+          const text=await resp.text().catch(()=>resp.statusText);
+          const err=new Error(`${resp.status} ${text||resp.statusText}`.trim());
+          err.status=resp.status;
+          throw err;
+        }
+        const contentType=resp.headers.get('content-type')||'';
+        let data=null;
+        if(contentType.includes('application/json')){
+          data=await resp.json();
+        }else{
+          const text=await resp.text();
+          try{ data=text?JSON.parse(text):null; }
+          catch(_){ data=null; }
+        }
+        return normalizeMedicalResponse(data);
+      };
+
       let fc=null;
-      if(data?.type==='FeatureCollection') fc=data;
-      else if(data?.data?.type==='FeatureCollection') fc=data.data;
-      else if(Array.isArray(data?.features)) fc={type:'FeatureCollection',features:data.features};
-      else if(Array.isArray(data)) fc={type:'FeatureCollection',features:data};
-      if(!fc) fc={...EMPTY_FC};
-      if(!Array.isArray(fc.features)) fc.features=[];
+      if(window.__supa?.functions?.invoke){
+        try{
+          fc=await tryInvoke();
+        }catch(err){
+          if(err.name==='AbortError') throw err;
+          console.warn('[medical] invoke failed ->', err);
+        }
+      }
+      if(!fc){
+        const headers={'Content-Type':'application/json'};
+        let bearerToken=null;
+        if(window.__supa?.auth?.getSession){
+          bearerToken=await resolveSupabaseAccessToken();
+        }
+        let authHeader=null;
+        if(bearerToken){
+          authHeader=`Bearer ${bearerToken}`;
+        }else if(SUPABASE_ANON){
+          authHeader=`Bearer ${SUPABASE_ANON}`;
+        }
+        if(authHeader){
+          headers.Authorization=authHeader;
+        }
+        try{
+          fc=await tryFetch(headers);
+        }catch(err){
+          if(err.name==='AbortError') throw err;
+          if(err.name==='TypeError' && headers.Authorization){
+            console.warn('[medical] network error with auth header, retrying without Authorization');
+            delete headers.Authorization;
+            fc=await tryFetch(headers);
+          }else{
+            throw err;
+          }
+        }
+      }
+      if(!fc){
+        fc={...EMPTY_FC};
+      }
       medicalCache.set(key,fc);
       return fc;
     }catch(err){
