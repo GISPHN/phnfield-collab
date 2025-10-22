@@ -2070,9 +2070,14 @@ function updateLayerVisibility(){
     setMedicalStatus('読込中…',{loading:true});
     try{
       const payload=normalizeScope(scope);
+      const headers={'Content-Type':'application/json'};
+      if(SUPABASE_ANON){
+        headers.apikey=SUPABASE_ANON;
+        headers.Authorization=`Bearer ${SUPABASE_ANON}`;
+      }
       const resp=await fetch(MED_PROXY,{
         method:'POST',
-        headers:{'Content-Type':'application/json'},
+        headers,
         body:JSON.stringify(payload),
         signal:controller.signal
       });
