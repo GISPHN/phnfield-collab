@@ -495,8 +495,21 @@ input[type="number"]{ width:70px; }
       </div>
       <div style="font-size:12px;color:#6b7280;margin-top:6px">※ハザードのタイルURLを設定していない場合は無効</div>
       <div style="font-size:12px;color:#6b7280;margin-top:4px">凡例（例示画像を必要に応じ差替）</div>
-      <img src="l2_flood_l.png" style="max-width:100%;opacity:.85" alt="凡例(洪水)">
-      <img src="l2_sediment_l.png" style="max-width:100%;opacity:.85" alt="凡例(土砂)">
+<!-- <img src="l2_flood_l.png" style="max-width:100%;opacity:.85" alt="凡例(洪水)"> -->
+<!-- <img src="l2_sediment_l.png" style="max-width:100%;opacity:.85" alt="凡例(土砂)"> -->
+
+    </div>
+
+    <div class="group">
+      <div>医療機関（API）:</div>
+      <div class="layerRow">
+        <label><input type="checkbox" id="chkMedical"> 医療機関</label>
+        <div class="layerActions">
+          <button class="miniBtn" data-layer="medical" data-action="scope">表示範囲</button>
+          <button class="miniBtn" data-layer="medical" data-action="label">ラベル</button>
+        </div>
+      </div>
+      <div id="medicalStatus" class="small" style="margin-left:26px;display:none;color:#64748b"></div>
     </div>
 
     <div class="group">
@@ -1128,16 +1141,26 @@ input[type="number"]{ width:70px; }
   };
   const BASE_OPACITY = 0.75;
 
+// 陰影（常に一番下） + ベース（少し透過）
+const HILLSHADE_SOURCE = { type:'raster', tiles:["https://cyberjapandata.gsi.go.jp/xyz/hillshademap/{z}/{x}/{y}.png"], tileSize:256, attribution:"© GSI" };
+
 const map = new maplibregl.Map({
   container:'map',
   style:{
     version:8,
     glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-      sources:{ base: BASE_SOURCES.osm },
-      layers:[{id:'base',type:'raster',source:'base',paint:{'raster-opacity':BASE_OPACITY}}]
+    sources:{
+      hillshade: HILLSHADE_SOURCE,
+      base: BASE_SOURCES.osm
     },
-    center:[139.767,35.681], zoom:5.2
-  });
+    layers:[
+      { id:'hillshade', type:'raster', source:'hillshade', paint:{ 'raster-opacity': 1.0 } },
+      { id:'base',      type:'raster', source:'base',      paint:{ 'raster-opacity': BASE_OPACITY } }
+    ]
+  },
+  center:[139.767,35.681], zoom:5.2
+});
+
 // 縮尺バー
 map.addControl(new maplibregl.ScaleControl({maxWidth:140, unit:'metric'}), 'bottom-left');
 
@@ -1159,14 +1182,37 @@ geoControl.on('geolocate', (pos)=>{
   }
   pulse.setLngLat([longitude, latitude]).addTo(map);
 });
+// スタイルロード後に医療機関レイヤを先に用意
+map.on('load', () => {
+  try {
+    ensureMedicalLayers();
+    updateLayerVisibility(); // チェック状態を反映
+    ensureOverlayOrder();    // ← これを追加
+  } catch(e) { console.warn(e); }
+});
+
+// 地図操作で医療機関を再取得
+['moveend','zoomend','dragend'].forEach(ev=>{
+  map.on(ev, () => {
+    if ($('chkMedical')?.checked) refreshMedicalLayer();
+  });
+});
 
 const overlayLayerOrder=[
+  // まずユーザー描画系
   'user-temp-fill','user-temp-line',
   'user-poly-fill','user-poly-line','user-line','user-line-label','user-poly-label','user-circle-label',
   'user-point-emoji','user-point-label',
+  // 医療機関（点・ラベル）
+  'medical-pt','medical-label',
+  // 避難施設（点・ラベル）
+  'emg-circle','emg-label',
+  'shel-circle','shel-label',
+  // 踏査ログ
   'survey-track-line','survey-track-points',
   'survey-notes-icon','survey-notes-label'
 ];
+
 function ensureOverlayOrder(){
   overlayLayerOrder.forEach(id=>{ if(map.getLayer(id)) map.moveLayer(id); });
 }
@@ -2110,6 +2156,7 @@ function updateLayerVisibility(){
   if(map.getLayer(MEDICAL_LAYER_LABEL)) map.setLayoutProperty(MEDICAL_LAYER_LABEL,'visibility', mvLabel||'none');
 }
 
+
   function fitToData(){
     const srcE=map.getSource('emergency');
     const srcS=map.getSource('shelter');
@@ -2498,12 +2545,21 @@ function updateLayerVisibility(){
         btn.addEventListener('click',()=>openExtentPanel(btn.dataset.layer));
       });
       $('btnExtentCancel').onclick=()=>{ extentPanel.style.display='none'; };
-      $('btnExtentConfirm').onclick=()=>{
-        const scope=readScopeFromUI();
-        if(currentScopeTarget==='global') layerScopeGlobal=scope; else layerScopeOverrides[currentScopeTarget]=scope;
-        extentPanel.style.display='none';
-        refreshLayers(true);
-      };
+
+$('btnExtentConfirm').onclick = () => {
+  const scope = readScopeFromUI();
+  if (currentScopeTarget === 'global') {
+    layerScopeGlobal = scope;
+  } else {
+    layerScopeOverrides[currentScopeTarget] = scope;
+  }
+  extentPanel.style.display = 'none';
+  // 範囲変更に合わせ再読込
+  medicalCache.clear();
+  currentMedicalKey = null;
+  refreshLayers(true);
+};
+
 
       (function(){
         const header=extentPanel.querySelector('.handle');
@@ -2579,7 +2635,6 @@ function updateLayerVisibility(){
 
       // 都道府県セレクト
       PREFS.forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;$('prefSelect').appendChild(o);});
-      $('prefSelect').addEventListener('change',renderMuniOptions);
 
     // FGB 読み込み
     try{
@@ -2620,6 +2675,7 @@ function updateLayerVisibility(){
         updateSuggest($('qMuni').value);
       }
       window.renderMuniOptions=renderMuniOptions;
+      $('prefSelect').addEventListener('change', renderMuniOptions);
       $('qMuni').addEventListener('input',()=>updateSuggest($('qMuni').value));
       $('qMuni').addEventListener('blur',()=>setTimeout(hideSuggest,150));
       $('qMuni').addEventListener('keydown',(ev)=>{if(ev.key==='Enter'){const val=$('qMuni').value;if(val){updateSuggest(val);}}});
@@ -3852,6 +3908,9 @@ refreshObjList();
   window.pushFeature = (f)=>{ _push(f); };
   const _rm = window.removeFeature;
   window.removeFeature = (f,opts)=>{ _rm(f,opts); };
+initFGB()                 // 避難施設レイヤの初期化
+  .then(()=>updateLayerVisibility())
+  .catch(e=>console.warn('initFGB failed', e));
 </script>
 
 </body>
