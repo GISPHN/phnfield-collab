@@ -2366,41 +2366,7 @@ async function fetchMedicalData(scope, key){
 
   ensureMedicalLayers(); // 念のためもう一度
 
-  const scope = getScopeFor('medical');
-  const keyBase = scopeKey(scope);
-  const b = map.getBounds();
-  const bboxKey = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
-    .map(n => Number(n.toFixed(3))).join(',');
-  const key = `${keyBase}|${bboxKey}`;
-  …
-
-
-    const shouldLoad=$('chkMedical')?.checked;
-    if(!shouldLoad){
-      setMedicalStatus('');
-      if(medicalAbortController){
-        medicalAbortController.abort();
-      }
-    }
-    if(!shouldLoad && !medicalCache.has(key)){
-      return;
-    }
-    let fc=medicalCache.get(key);
-    const needsFetch=shouldLoad && (!fc || currentMedicalKey!==key);
-    if(needsFetch){
-      fc=await fetchMedicalData(scope,key);
-      if(fc===null){
-        return;
-      }
-      currentMedicalKey=key;
-      applyMedicalData(fc,{updateStatus:true});
-      setMedicalStatus('');
-    }else if(fc){
-      applyMedicalData(fc,{updateStatus:shouldLoad});
-    }
-  }
-
-  async function refreshLayers(showToast=false){
+   async function refreshLayers(showToast=false){
     try{
       if(cacheEmergency && map.getSource('emergency')){
         const scopeE = getScopeFor('emergency');
