@@ -2112,7 +2112,13 @@ async function fetchMedicalData(scope, key){
 
   setMedicalStatus('読込中…', { loading: true });
   try{
-    const res = await fetch(url, { method:'GET' });
+    // ← 置換：Edge Function が JWT 検証を要求しても通るように anon キーを付与
+const res = await fetch(url, {
+  method: 'GET',
+  headers: {
+    'Authorization': `Bearer ${SUPABASE_ANON}`
+  }
+});
     if (!res.ok) throw new Error(`${res.status} ${await res.text().catch(()=>res.statusText)}`);
     const fc = normalizeMedicalResponse(await res.json().catch(()=>({})));
     medicalCache.set(key, fc);
