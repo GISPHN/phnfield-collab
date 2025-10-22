@@ -1150,6 +1150,13 @@ geoControl.on('geolocate', (pos)=>{
   }
   pulse.setLngLat([longitude, latitude]).addTo(map);
 });
+// スタイルロード後に医療機関レイヤを先に用意
+map.on('load', () => {
+  try {
+    ensureMedicalLayers();
+    updateLayerVisibility(); // チェック状態を反映
+  } catch(e) { console.warn(e); }
+});
 
 const overlayLayerOrder=[
   'user-temp-fill','user-temp-line',
@@ -1421,7 +1428,7 @@ async function readFGB_fromURL(url) {
 
   const MUNI_COL_CANDIDATES=["都道府県名及び市町村名","都道府県及び市町村名"];
   const LABEL_CANDIDATES   =["施設・場所名","住所","共通ID","NO"];
-  const DEFAULT_MED_LABEL='P04_003_ja';
+  const DEFAULT_MED_LABEL='P04_002_ja';
   const CAP_TAGS=[
     '1.行政と政治','2.人口統計','3.歴史、民族性、価値観','4.物理的環境','5.保健医療と社会福祉','6.経済','7.交通と安全','8.教育・レクリエーション','9.情報とコミュニケーション'
   ];
@@ -2076,6 +2083,11 @@ function updateLayerVisibility(){
     return JSON.stringify(normalizeScope(scope));
   }
 function ensureMedicalLayers(){
+  // Map の style がまだなら load 待ち
+if (!map || !map.getStyle || !map.isStyleLoaded || !map.isStyleLoaded()) {
+  map.once('load', () => ensureMedicalLayers());
+  return;
+}
   if (map.getSource('medical')) return;
   map.addSource('medical', { type:'geojson', data: EMPTY_FC, promoteId: 'id' });
 
@@ -2120,6 +2132,7 @@ function ensureMedicalLayers(){
 
 function applyMedicalData(fc){
   ensureMedicalLayers();
+if (!map.getLayer('medical-pt') || !map.getLayer('medical-label')) return;
 
   // 1) ソースに反映
   const src = map.getSource('medical');
@@ -2225,6 +2238,7 @@ function buildMedicalFilterUI(cats, colorMap){
 
 function applyMedicalCategoryFilter(){
   // MED_FILTER_ON === null → 全部表示
+  if (!map.getLayer('medical-pt') || !map.getLayer('medical-label')) return;
   if (MED_FILTER_ON === null){
     map.setFilter('medical-pt', null);
     map.setFilter('medical-label', null);
@@ -2261,7 +2275,7 @@ async function fetchMedicalData(scope, key){
 
   // ★ズームに応じてAPIの z を可変（粗いとタイル減→速い、細かいと取りこぼし減）
   const zNow = Math.round(map.getZoom());
-  const z = Math.max(11, Math.min(13, zNow)); // 11〜15 にクランプ
+  const z = Math.max(12, Math.min(14, zNow)); // 11〜15 にクランプ
 
   // cityCsv（前方一致フィルタ）
   let cityCsv = '';
@@ -2298,14 +2312,22 @@ async function fetchMedicalData(scope, key){
 }
 
 // ここまで置換
-  async function refreshMedicalLayer(){
-    if(!map.getSource(MEDICAL_SOURCE_ID)) return;
-const scope = getScopeFor('medical');
-const keyBase = scopeKey(scope);
-const b = map.getBounds();
-const bboxKey = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
-  .map(n => Number(n.toFixed(3))).join(',');
-const key = `${keyBase}|${bboxKey}`;
+ async function refreshMedicalLayer(){
+  // レイヤ準備を保証
+  if (!map || !map.isStyleLoaded || !map.isStyleLoaded()) {
+    map.once('load', () => refreshMedicalLayer());
+    return;
+  }
+  ensureMedicalLayers(); // 念のためもう一度
+
+  const scope = getScopeFor('medical');
+  const keyBase = scopeKey(scope);
+  const b = map.getBounds();
+  const bboxKey = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
+    .map(n => Number(n.toFixed(3))).join(',');
+  const key = `${keyBase}|${bboxKey}`;
+  …
+
 
     const shouldLoad=$('chkMedical')?.checked;
     if(!shouldLoad){
@@ -2326,6 +2348,7 @@ const key = `${keyBase}|${bboxKey}`;
       }
       currentMedicalKey=key;
       applyMedicalData(fc,{updateStatus:true});
+      setMedicalStatus('');
     }else if(fc){
       applyMedicalData(fc,{updateStatus:shouldLoad});
     }
