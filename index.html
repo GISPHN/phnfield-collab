@@ -1317,8 +1317,9 @@ const MED_PALETTE = ['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#a65628'
 let MED_FILTER_ON = null; // Set<number> | null
 
   const MEDICAL_SOURCE_ID='medical';
-  const MEDICAL_LAYER_POINT='med-circle';
-  const MEDICAL_LAYER_LABEL='med-label';
+　const MEDICAL_LAYER_POINT='medical-pt';
+　const MEDICAL_LAYER_LABEL='medical-label';
+
 
 // 自己ホストした flatgeobuf を “必ず最初に” 読みにいく
 const LOCAL_FGB_LIB = './flatgeobuf-geojson.min.js';
@@ -2260,7 +2261,7 @@ async function fetchMedicalData(scope, key){
 
   // ★ズームに応じてAPIの z を可変（粗いとタイル減→速い、細かいと取りこぼし減）
   const zNow = Math.round(map.getZoom());
-  const z = Math.max(11, Math.min(15, zNow)); // 11〜15 にクランプ
+  const z = Math.max(11, Math.min(13, zNow)); // 11〜15 にクランプ
 
   // cityCsv（前方一致フィルタ）
   let cityCsv = '';
@@ -2301,13 +2302,6 @@ async function fetchMedicalData(scope, key){
     if(!map.getSource(MEDICAL_SOURCE_ID)) return;
 const scope = getScopeFor('medical');
 const keyBase = scopeKey(scope);
-const b = map.getBounds();
-const bboxKey = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
-  .map(n => Number(n.toFixed(3))).join(',');
-const key = `${keyBase}|${bboxKey}`;
-
-
-// いまの地図範囲もキーに混ぜて、範囲が変われば再取得されるようにする
 const b = map.getBounds();
 const bboxKey = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
   .map(n => Number(n.toFixed(3))).join(',');
@@ -2415,9 +2409,7 @@ const key = `${keyBase}|${bboxKey}`;
     if(!map.getLayer('emg-label'))   map.addLayer({id:'emg-label',type:'symbol',source:'emergency',layout:{ visibility:'none','text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top'},paint:{'text-halo-width':1.2,'text-halo-color':'#fff'}
 });
     if(!map.getLayer('shel-label'))  map.addLayer({id:'shel-label',type:'symbol',source:'shelter',  layout:{ visibility:'none','text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top'},paint:{'text-halo-width':1.2,'text-halo-color':'#fff'}});
-    if(!map.getLayer(MEDICAL_LAYER_POINT)) map.addLayer({id:MEDICAL_LAYER_POINT,type:'circle',source:MEDICAL_SOURCE_ID,layout:{ visibility:'none' },paint:{'circle-radius':5,'circle-color':'#0f766e','circle-stroke-color':'#fff','circle-stroke-width':1}});
-    if(!map.getLayer(MEDICAL_LAYER_LABEL)) map.addLayer({id:MEDICAL_LAYER_LABEL,type:'symbol',source:MEDICAL_SOURCE_ID,layout:{ visibility:'none','text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top','text-allow-overlap':false},paint:{'text-halo-width':1.2,'text-halo-color':'#fff','text-color':'#0f172a'}});
-    bindClickPopup('emg-circle'); bindClickPopup('shel-circle'); bindClickPopup(MEDICAL_LAYER_POINT);
+        bindClickPopup('emg-circle'); bindClickPopup('shel-circle'); bindClickPopup(MEDICAL_LAYER_POINT);
       ['chkEmergency','chkShelter','chkMedical'].forEach(id=>$(id)?.addEventListener('change',()=>{ refreshLayers(); }));
 
       document.querySelectorAll('input[name="areaMode"]').forEach(r=>{
@@ -2459,12 +2451,22 @@ const key = `${keyBase}|${bboxKey}`;
         btn.addEventListener('click',()=>openExtentPanel(btn.dataset.layer));
       });
       $('btnExtentCancel').onclick=()=>{ extentPanel.style.display='none'; };
-      $('btnExtentConfirm').onclick=()=>{
-        const scope=readScopeFromUI();
-        if(currentScopeTarget==='global') layerScopeGlobal=scope; else layerScopeOverrides[currentScopeTarget]=scope;
-        extentPanel.style.display='none';
-        refreshLayers(true);
-      };
+      $('btnExtentCancel').onclick = () => { extentPanel.style.display = 'none'; };
+
+$('btnExtentConfirm').onclick = () => {
+  const scope = readScopeFromUI();
+  if (currentScopeTarget === 'global') {
+    layerScopeGlobal = scope;
+  } else {
+    layerScopeOverrides[currentScopeTarget] = scope;
+  }
+  extentPanel.style.display = 'none';
+  // 範囲変更に合わせ再読込
+  medicalCache.clear();
+  currentMedicalKey = null;
+  refreshLayers(true);
+};
+
 
       (function(){
         const header=extentPanel.querySelector('.handle');
