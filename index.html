@@ -495,8 +495,9 @@ input[type="number"]{ width:70px; }
       </div>
       <div style="font-size:12px;color:#6b7280;margin-top:6px">※ハザードのタイルURLを設定していない場合は無効</div>
       <div style="font-size:12px;color:#6b7280;margin-top:4px">凡例（例示画像を必要に応じ差替）</div>
-      <img src="l2_flood_l.png" style="max-width:100%;opacity:.85" alt="凡例(洪水)">
-      <img src="l2_sediment_l.png" style="max-width:100%;opacity:.85" alt="凡例(土砂)">
+<!-- <img src="l2_flood_l.png" style="max-width:100%;opacity:.85" alt="凡例(洪水)"> -->
+<!-- <img src="l2_sediment_l.png" style="max-width:100%;opacity:.85" alt="凡例(土砂)"> -->
+
     </div>
 
     <div class="group">
@@ -1156,6 +1157,12 @@ map.on('load', () => {
     ensureMedicalLayers();
     updateLayerVisibility(); // チェック状態を反映
   } catch(e) { console.warn(e); }
+});
+// 地図操作で医療機関を再取得
+['moveend','zoomend','dragend'].forEach(ev=>{
+  map.on(ev, () => {
+    if ($('chkMedical')?.checked) refreshMedicalLayer();
+  });
 });
 
 const overlayLayerOrder=[
@@ -2313,11 +2320,50 @@ async function fetchMedicalData(scope, key){
 
 // ここまで置換
  async function refreshMedicalLayer(){
-  // レイヤ準備を保証
+  // Map の style がまだなら load 待ち
   if (!map || !map.isStyleLoaded || !map.isStyleLoaded()) {
     map.once('load', () => refreshMedicalLayer());
     return;
   }
+  ensureMedicalLayers(); // 念のため
+
+  // 現在の一括/個別スコープ
+  const scope = getScopeFor('medical');
+
+  // 画面範囲（キャッシュキー用に粗丸め）
+  const b = map.getBounds();
+  const bboxKey = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
+    .map(n => Number(n.toFixed(3))).join(',');
+
+  const key = `${scopeKey(scope)}|${bboxKey}`;
+
+  // 表示チェックボックスの状態
+  const shouldLoad = $('chkMedical')?.checked === true;
+
+  // OFF ならロード要求を中止し、既存キャッシュだけで可視状態を更新
+  if (!shouldLoad) {
+    setMedicalStatus('');
+    if (medicalAbortController) medicalAbortController.abort();
+    if (!medicalCache.has(key)) return;
+  }
+
+  let fc = medicalCache.get(key);
+  const needsFetch = shouldLoad && (!fc || currentMedicalKey !== key);
+
+  if (needsFetch) {
+    fc = await fetchMedicalData(scope, key);
+    if (fc === null) return; // 失敗時はそのまま
+    currentMedicalKey = key;
+    applyMedicalData(fc);
+    setMedicalStatus('');
+  } else if (fc) {
+    applyMedicalData(fc);
+  }
+
+  // 可視状態を反映
+  updateLayerVisibility();
+}
+
   ensureMedicalLayers(); // 念のためもう一度
 
   const scope = getScopeFor('medical');
