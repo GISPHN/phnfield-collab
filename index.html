@@ -2088,14 +2088,12 @@ function updateLayerVisibility(){
       if(window.__supa?.auth?.getSession){
         bearerToken=await resolveSupabaseAccessToken();
       }
-      if(!bearerToken){
-        setMedicalStatus('Supabaseにサインインすると医療機関を表示できます',{error:true});
-        return null;
-      }
       if(SUPABASE_ANON){
         headers.apikey=SUPABASE_ANON;
       }
-      headers.Authorization=`Bearer ${bearerToken}`;
+      if(bearerToken){
+        headers.Authorization=`Bearer ${bearerToken}`;
+      }
       if(controller.signal.aborted){
         throw new DOMException('Aborted','AbortError');
       }
@@ -2139,7 +2137,7 @@ function updateLayerVisibility(){
       console.warn('[medical] fetch failed ->', err);
       const msg=String(err.message||'');
       if(msg.includes('401')||msg.includes('403')){
-        setMedicalStatus('認証エラー：再ログインしてください',{error:true});
+        setMedicalStatus('医療機関データへのアクセスが拒否されました',{error:true});
         return null;
       }else{
         if(err.name==='TypeError'){
@@ -2218,11 +2216,12 @@ function updateLayerVisibility(){
           map.getSource(MEDICAL_SOURCE_ID).setData(EMPTY_FC);
         }
         if($('chkMedical')?.checked){
-          setMedicalStatus('Supabaseにサインインすると医療機関を表示できます',{error:true});
+          refreshMedicalLayer();
         }else{
           setMedicalStatus('');
         }
       }else if(token && (event==='SIGNED_IN' || event==='TOKEN_REFRESHED' || event==='USER_UPDATED')){
+        medicalCache.clear();
         currentMedicalKey=null;
         if($('chkMedical')?.checked){
           refreshMedicalLayer();
