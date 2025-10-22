@@ -2081,7 +2081,6 @@ function updateLayerVisibility(){
     }
     const controller=new AbortController();
     medicalAbortController=controller;
-    setMedicalStatus('読込中…',{loading:true});
     try{
       const payload=normalizeScope(scope);
       const headers={'Content-Type':'application/json'};
@@ -2089,18 +2088,18 @@ function updateLayerVisibility(){
       if(window.__supa?.auth?.getSession){
         bearerToken=await resolveSupabaseAccessToken();
       }
-      if(!bearerToken && SUPABASE_ANON){
-        bearerToken=SUPABASE_ANON;
+      if(!bearerToken){
+        setMedicalStatus('Supabaseにサインインすると医療機関を表示できます',{error:true});
+        return null;
       }
       if(SUPABASE_ANON){
         headers.apikey=SUPABASE_ANON;
       }
-      if(bearerToken){
-        headers.Authorization=`Bearer ${bearerToken}`;
-      }
+      headers.Authorization=`Bearer ${bearerToken}`;
       if(controller.signal.aborted){
         throw new DOMException('Aborted','AbortError');
       }
+      setMedicalStatus('読込中…',{loading:true});
       const resp=await fetch(MED_PROXY,{
         method:'POST',
         headers,
@@ -2137,13 +2136,19 @@ function updateLayerVisibility(){
       if(err.name==='AbortError'){
         return null;
       }
+      console.warn('[medical] fetch failed ->', err);
       const msg=String(err.message||'');
       if(msg.includes('401')||msg.includes('403')){
         setMedicalStatus('認証エラー：再ログインしてください',{error:true});
+        return null;
       }else{
-        setMedicalStatus('読込に失敗しました',{error:true});
+        if(err.name==='TypeError'){
+          setMedicalStatus('通信エラー：医療機関データを取得できません',{error:true});
+        }else{
+          setMedicalStatus('読込に失敗しました',{error:true});
+        }
       }
-      throw new Error(msg||'医療機関APIエラー');
+      return null;
     }finally{
       if(medicalAbortController===controller){
         medicalAbortController=null;
@@ -2199,6 +2204,31 @@ function updateLayerVisibility(){
       console.error('refreshLayers',err);
       toast('レイヤーの更新に失敗: '+err.message,true);
     }
+  }
+
+  if(window.__supa?.auth?.onAuthStateChange){
+    window.__supa.auth.onAuthStateChange((event,session)=>{
+      const token=session?.access_token || null;
+      if(!token || event==='SIGNED_OUT'){
+        medicalCache.clear();
+        currentMedicalKey=null;
+        layerColumns.medical=[];
+        layerLabelFields.medical=DEFAULT_MED_LABEL;
+        if(map && map.getSource && map.getSource(MEDICAL_SOURCE_ID)){
+          map.getSource(MEDICAL_SOURCE_ID).setData(EMPTY_FC);
+        }
+        if($('chkMedical')?.checked){
+          setMedicalStatus('Supabaseにサインインすると医療機関を表示できます',{error:true});
+        }else{
+          setMedicalStatus('');
+        }
+      }else if(token && (event==='SIGNED_IN' || event==='TOKEN_REFRESHED' || event==='USER_UPDATED')){
+        currentMedicalKey=null;
+        if($('chkMedical')?.checked){
+          refreshMedicalLayer();
+        }
+      }
+    });
   }
 
   function hideSuggest(){ $('suggest').style.display='none'; $('suggest').innerHTML=''; }
