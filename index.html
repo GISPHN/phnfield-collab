@@ -1109,16 +1109,26 @@ input[type="number"]{ width:70px; }
   };
   const BASE_OPACITY = 0.75;
 
+// 陰影（常に一番下） + ベース（少し透過）
+const HILLSHADE_SOURCE = { type:'raster', tiles:["https://cyberjapandata.gsi.go.jp/xyz/hillshademap/{z}/{x}/{y}.png"], tileSize:256, attribution:"© GSI" };
+
 const map = new maplibregl.Map({
   container:'map',
   style:{
     version:8,
     glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-      sources:{ base: BASE_SOURCES.osm },
-      layers:[{id:'base',type:'raster',source:'base',paint:{'raster-opacity':BASE_OPACITY}}]
+    sources:{
+      hillshade: HILLSHADE_SOURCE,
+      base: BASE_SOURCES.osm
     },
-    center:[139.767,35.681], zoom:5.2
-  });
+    layers:[
+      { id:'hillshade', type:'raster', source:'hillshade', paint:{ 'raster-opacity': 1.0 } },
+      { id:'base',      type:'raster', source:'base',      paint:{ 'raster-opacity': BASE_OPACITY } }
+    ]
+  },
+  center:[139.767,35.681], zoom:5.2
+});
+
 // 縮尺バー
 map.addControl(new maplibregl.ScaleControl({maxWidth:140, unit:'metric'}), 'bottom-left');
 
@@ -2087,39 +2097,24 @@ function updateLayerVisibility(){
 
 // ここから置換
 async function fetchMedicalData(scope, key){
-  // Edge Function は GET で bbox / city を受け取る実装
-  if (!MED_PROXY) return EMPTY_FC;
-
-  // いまの地図範囲から bbox を作る（minX,minY,maxX,maxY）
-  const b = map.getBounds(); // MapLibre
+  const b = map.getBounds();
   const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
     .map(n => Number(n.toFixed(6))).join(',');
-
-  // 市区町村の前方一致フィルタ用 CSV（「都道府県 市区町村」形式）
-  // scope.munis が空なら（= 都道府県だけ指定 or 全国）空文字にして Edge 側で無フィルタにする
   let cityCsv = '';
   const ns = normalizeScope(scope);
   if (ns.mode === 'muni' && ns.munis.length){
     cityCsv = ns.munis.join(',');
   }else if (ns.mode === 'pref' && ns.prefs.length){
-    // 都道府県のみ指定時は、その都道府県名で前方一致（例：「東京都 」）
     cityCsv = ns.prefs.map(p => `${p} `).join(',');
   }
-
-  // Edge Function は z パラメータが無くても既定 14 で動作するが明示しておく
-  const url = `${MED_PROXY}?bbox=${encodeURIComponent(bbox)}&z=14` +
-              (cityCsv ? `&city=${encodeURIComponent(cityCsv)}` : '');
+  const url = `${MED_PROXY}?bbox=${encodeURIComponent(bbox)}&z=14`
+            + (cityCsv ? `&city=${encodeURIComponent(cityCsv)}` : '');
 
   setMedicalStatus('読込中…', { loading: true });
-
   try{
     const res = await fetch(url, { method:'GET' });
-    if (!res.ok){
-      const t = await res.text().catch(()=>res.statusText);
-      throw new Error(`${res.status} ${t || res.statusText}`);
-    }
-    const data = await res.json().catch(()=>({ type:'FeatureCollection', features:[] }));
-    const fc = normalizeMedicalResponse(data);
+    if (!res.ok) throw new Error(`${res.status} ${await res.text().catch(()=>res.statusText)}`);
+    const fc = normalizeMedicalResponse(await res.json().catch(()=>({})));
     medicalCache.set(key, fc);
     return fc;
   }catch(err){
@@ -2128,105 +2123,8 @@ async function fetchMedicalData(scope, key){
     return null;
   }
 }
+
 // ここまで置換
-
-      const tryFetch=async(headers)=>{
-        if(controller.signal.aborted){
-          throw new DOMException('Aborted','AbortError');
-        }
-        const resp=await fetch(MED_PROXY,{
-          method:'POST',
-          headers,
-          body:JSON.stringify(payload),
-          signal:controller.signal
-        });
-        if(resp.status===204){
-          return EMPTY_FC;
-        }
-        if(!resp.ok){
-          const text=await resp.text().catch(()=>resp.statusText);
-          const err=new Error(`${resp.status} ${text||resp.statusText}`.trim());
-          err.status=resp.status;
-          throw err;
-        }
-        const contentType=resp.headers.get('content-type')||'';
-        let data=null;
-        if(contentType.includes('application/json')){
-          data=await resp.json();
-        }else{
-          const text=await resp.text();
-          try{ data=text?JSON.parse(text):null; }
-          catch(_){ data=null; }
-        }
-        return normalizeMedicalResponse(data);
-      };
-
-      let fc=null;
-      if(window.__supa?.functions?.invoke){
-        try{
-          fc=await tryInvoke();
-        }catch(err){
-          if(err.name==='AbortError') throw err;
-          console.warn('[medical] invoke failed ->', err);
-        }
-      }
-      if(!fc){
-        const headers={'Content-Type':'application/json'};
-        let bearerToken=null;
-        if(window.__supa?.auth?.getSession){
-          bearerToken=await resolveSupabaseAccessToken();
-        }
-        let authHeader=null;
-        if(bearerToken){
-          authHeader=`Bearer ${bearerToken}`;
-        }else if(SUPABASE_ANON){
-          authHeader=`Bearer ${SUPABASE_ANON}`;
-        }
-        if(authHeader){
-          headers.Authorization=authHeader;
-        }
-        try{
-          fc=await tryFetch(headers);
-        }catch(err){
-          if(err.name==='AbortError') throw err;
-          if(err.name==='TypeError' && headers.Authorization){
-            console.warn('[medical] network error with auth header, retrying without Authorization');
-            delete headers.Authorization;
-            fc=await tryFetch(headers);
-          }else{
-            throw err;
-          }
-        }
-      }
-      if(!fc){
-        fc={...EMPTY_FC};
-      }
-      medicalCache.set(key,fc);
-      return fc;
-    }catch(err){
-      if(err.name==='AbortError'){
-        return null;
-      }
-      console.warn('[medical] fetch failed ->', err);
-      const msg=String(err.message||'');
-      if(msg.includes('401')||msg.includes('403')){
-        setMedicalStatus('医療機関データへのアクセスが拒否されました',{error:true});
-        return null;
-      }else{
-        if(err.name==='TypeError'){
-          setMedicalStatus('通信エラー：医療機関データを取得できません',{error:true});
-        }else{
-          setMedicalStatus('読込に失敗しました',{error:true});
-        }
-      }
-      return null;
-    }finally{
-      if(medicalAbortController===controller){
-        medicalAbortController=null;
-      }
-    }
-  }
-
   async function refreshMedicalLayer(){
     if(!map.getSource(MEDICAL_SOURCE_ID)) return;
 const scope = getScopeFor('medical');
