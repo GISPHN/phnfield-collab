@@ -1510,10 +1510,6 @@ function ensureMedicalLayers(){
   // Supabase Storage の Public URL をそのまま貼ってください（署名URLではありません）
   const FGB_URL_EMERGENCY='https://tdoxxwhkvdguyfrofnaw.supabase.co/storage/v1/object/public/data/Designated%20Emergency%20Evacuation%20Site.fgb'; // ←置換（先頭 e）
   const FGB_URL_SHELTER  ='https://tdoxxwhkvdguyfrofnaw.supabase.co/storage/v1/object/public/data/Designated%20Shelter%20for%20Evacuees.fgb';     // ←置換
-  const MED_PROXY = 'https://tdoxxwhkvdguyfrofnaw.supabase.co/functions/v1/medical-proxy';
-  const MEDICAL_SOURCE_ID='medical';
-  const MEDICAL_LAYER_POINT='med-circle';
-  const MEDICAL_LAYER_LABEL='med-label';
 
 // 自己ホストした flatgeobuf を “必ず最初に” 読みにいく
 const LOCAL_FGB_LIB = './flatgeobuf-geojson.min.js';
@@ -2516,37 +2512,6 @@ if (map.getLayer(MEDICAL_LAYER_LABEL)) map.setLayoutProperty(MEDICAL_LAYER_LABEL
         }catch(err){
           if(err.name==='AbortError') throw err;
           console.warn('[medical] invoke failed ->', err);
-        }
-      }
-      if(!fc){
-        const headers={'Content-Type':'application/json'};
-        if(SUPABASE_ANON){
-          headers.apikey=SUPABASE_ANON;
-        }
-        let bearerToken=null;
-        if(window.__supa?.auth?.getSession){
-          bearerToken=await resolveSupabaseAccessToken();
-        }
-        let authHeader=null;
-        if(bearerToken){
-          authHeader=`Bearer ${bearerToken}`;
-        }else if(SUPABASE_ANON){
-          authHeader=`Bearer ${SUPABASE_ANON}`;
-        }
-        if(authHeader){
-          headers.Authorization=authHeader;
-        }
-        try{
-          fc=await tryFetch(headers);
-        }catch(err){
-          if(err.name==='AbortError') throw err;
-          if(err.name==='TypeError' && headers.Authorization){
-            console.warn('[medical] network error with auth header, retrying without Authorization');
-            delete headers.Authorization;
-            fc=await tryFetch(headers);
-          }else{
-            throw err;
-          }
         }
       }
       if(!fc){
@@ -4124,6 +4089,129 @@ refreshObjList();
 initFGB()                 // 避難施設レイヤの初期化
   .then(()=>updateLayerVisibility())
   .catch(e=>console.warn('initFGB failed', e));
+  <script>
+/* === Medical layer: 統一版 === */
+const MEDICAL_SOURCE_ID = 'medical';
+const MEDICAL_LAYER_POINT = 'medical-pt';
+const MEDICAL_LAYER_LABEL = 'medical-label';
+
+function ensureMedicalLayers(){
+  if(!map.getSource(MEDICAL_SOURCE_ID)){
+    map.addSource(MEDICAL_SOURCE_ID,{ type:'geojson', data:{type:'FeatureCollection',features:[]} });
+  }
+  if(!map.getLayer(MEDICAL_LAYER_POINT)){
+    map.addLayer({
+      id: MEDICAL_LAYER_POINT,
+      type: 'circle',
+      source: MEDICAL_SOURCE_ID,
+      layout:{ visibility:'none' },
+      paint:{
+        'circle-radius': 5,
+        // P04_001（種別コード）の値で色分け（例）
+        'circle-color': [
+          'match', ['get','P04_001'],
+          1, '#ef4444',    /* 病院 */
+          2, '#3b82f6',    /* 診療所 */
+          3, '#10b981',    /* 歯科 */
+          /* default */ '#6b7280'
+        ],
+        'circle-stroke-color':'#fff',
+        'circle-stroke-width':1
+      }
+    });
+  }
+  if(!map.getLayer(MEDICAL_LAYER_LABEL)){
+    map.addLayer({
+      id: MEDICAL_LAYER_LABEL,
+      type: 'symbol',
+      source: MEDICAL_SOURCE_ID,
+      layout:{
+        visibility:'none',
+        'text-field': ['coalesce',['get','P04_002_ja'],''], // デフォルトのラベル
+        'text-size': 12,
+        'text-offset':[0,1.1],
+        'text-anchor':'top',
+        'text-allow-overlap': true
+      },
+      paint:{
+        'text-color':'#111827',
+        'text-halo-color':'#fff',
+        'text-halo-width':1.6
+      }
+    });
+  }
+}
+
+function removeMedicalFromMap(){
+  try{
+    if(map.getLayer(MEDICAL_LAYER_LABEL)) map.removeLayer(MEDICAL_LAYER_LABEL);
+    if(map.getLayer(MEDICAL_LAYER_POINT)) map.removeLayer(MEDICAL_LAYER_POINT);
+    if(map.getSource(MEDICAL_SOURCE_ID))  map.removeSource(MEDICAL_SOURCE_ID);
+  }catch(_){}
+}
+
+function setMedicalStatus(text, isErr=false){
+  const s = document.getElementById('medicalStatus');
+  if(!s) return;
+  if(!text){ s.style.display='none'; return; }
+  s.style.display='block';
+  s.textContent = text;
+  s.style.color = isErr ? '#b91c1c' : '#64748b';
+}
+
+// Supabase Edge Function 経由で医療機関を取得
+async function refreshMedicalLayer(){
+  const chk = document.getElementById('chkMedical');
+  if(!chk || !chk.checked) return;
+  setMedicalStatus('医療機関データを読み込み中…');
+
+  try{
+    const b = map.getBounds();
+    const payload = {
+      bbox: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map(v=>+v.toFixed(6)),
+      z: Math.round(map.getZoom())
+    };
+    if(!window.__supa?.functions?.invoke) throw new Error('Supabase client not ready');
+
+    const { data, error } = await window.__supa.functions.invoke('medical-proxy', { body: payload });
+    if(error) throw error;
+    if(!data || data.type!=='FeatureCollection' || !Array.isArray(data.features)){
+      throw new Error('invalid response');
+    }
+
+    ensureMedicalLayers();
+    map.getSource(MEDICAL_SOURCE_ID).setData(data);
+
+    const vis = chk.checked ? 'visible' : 'none';
+    if(map.getLayer(MEDICAL_LAYER_POINT)) map.setLayoutProperty(MEDICAL_LAYER_POINT,'visibility',vis);
+    if(map.getLayer(MEDICAL_LAYER_LABEL)) map.setLayoutProperty(MEDICAL_LAYER_LABEL,'visibility',vis);
+
+    setMedicalStatus(`表示件数: ${data.features.length.toLocaleString()}件`);
+  }catch(e){
+    console.error('[medical] fetch error', e);
+    setMedicalStatus('読み込みに失敗しました: ' + (e.message||e), true);
+    removeMedicalFromMap();
+  }
+}
+
+// チェックのON/OFFで表示切替
+document.getElementById('chkMedical')?.addEventListener('change', (ev)=>{
+  if(ev.target.checked) refreshMedicalLayer();
+  else removeMedicalFromMap();
+});
+
+// 地図操作後に再取得（負荷を下げるためデバウンス）
+let _medTimer=null;
+['moveend','zoomend','dragend'].forEach(ev=>{
+  map.on(ev, ()=>{
+    if(!document.getElementById('chkMedical')?.checked) return;
+    clearTimeout(_medTimer);
+    _medTimer = setTimeout(refreshMedicalLayer, 500);
+  });
+});
+/* === /Medical layer === */
+</script>
+
 </script>
 
 </body>
