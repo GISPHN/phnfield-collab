@@ -719,38 +719,6 @@ input[type="number"]{ width:70px; }
       if(map.getSource && map.getSource('medical')) map.removeSource('medical');
     } catch(e){}
 
-    map.addSource('medical', { type: 'geojson', data: fc });
-
-    map.addLayer({
-      id: 'medical-points',
-      type: 'circle',
-      source: 'medical',
-      paint: {
-        'circle-radius': 6,
-        'circle-color': '#e11d48',
-        'circle-stroke-color': '#fff',
-        'circle-stroke-width': 1
-      },
-      // 正しい MapLibre のジオメトリ判定式
-      filter: ['==', ['geometry-type'], 'Point']
-    });
-
-    if(!map.getLayer('medical-labels')){
-      map.addLayer({
-        id: 'medical-labels',
-        type: 'symbol',
-        source: 'medical',
-        layout: {
-          'text-field': ['coalesce', ['get', 'label'], ['get', 'P04_003_ja'], ''],
-          'text-size': 12,
-          'text-offset': [0, 1.2],
-          'text-anchor': 'top'
-        },
-        paint: { 'text-color': '#111827' }
-      });
-    }
-  }
-
   function removeMedicalFromMap(){
     try {
       if(map.getLayer && map.getLayer('medical-labels')) map.removeLayer('medical-labels');
@@ -1334,6 +1302,10 @@ map.on('load', () => {
 });
 
 const overlayLayerOrder=[
+const MEDICAL_SOURCE_ID  = 'medical';
+const MEDICAL_LAYER_POINT = 'med-circle';
+const MEDICAL_LAYER_LABEL = 'med-label';
+
   // まずユーザー描画系
   'user-temp-fill','user-temp-line',
   'user-poly-fill','user-poly-line','user-line','user-line-label','user-poly-label','user-circle-label',
@@ -1455,6 +1427,39 @@ const draw = new MapboxDraw({
   const HAZ_SED_LAYER_IDS =["haz-sed-0","haz-sed-1","haz-sed-2"];
 
   function ensureHazardLayers(){
+    function ensureMedicalLayers(){
+  if (!map.getSource(MEDICAL_SOURCE_ID)) {
+    map.addSource(MEDICAL_SOURCE_ID, { type:'geojson', data:{ type:'FeatureCollection', features:[] } });
+  }
+  if (!map.getLayer(MEDICAL_LAYER_POINT)) {
+    map.addLayer({
+      id: MEDICAL_LAYER_POINT,
+      type: 'circle',
+      source: MEDICAL_SOURCE_ID,
+      paint: {
+        'circle-radius': 6,
+        'circle-color': '#e11d48',
+        'circle-stroke-color': '#fff',
+        'circle-stroke-width': 1
+      }
+    });
+  }
+  if (!map.getLayer(MEDICAL_LAYER_LABEL)) {
+    map.addLayer({
+      id: MEDICAL_LAYER_LABEL,
+      type: 'symbol',
+      source: MEDICAL_SOURCE_ID,
+      layout: {
+        'text-field': ['coalesce', ['get','P04_002_ja'], ['get','P04_003_ja'], '' ], // 既定ラベル = 施設名
+        'text-size': 12,
+        'text-offset': [0,1.1],
+        'text-anchor': 'top'
+      },
+      paint: { 'text-color':'#111827', 'text-halo-color':'#fff', 'text-halo-width': 1.2 }
+    });
+  }
+}
+
     const opa=Number($('hazOpacity').value||0.6);
     if(FLOOD_TILES && !map.getSource(HAZ_FLOOD_SOURCE_ID)){
       map.addSource(HAZ_FLOOD_SOURCE_ID,{type:'raster',tiles:[FLOOD_TILES],tileSize:256});
@@ -2278,6 +2283,13 @@ async function readFGB_fromURL(url) {
 
 
 function updateLayerVisibility(){
+  // 医療機関
+const medVis = $('chkMedical')?.checked ? 'visible' : 'none';
+if (map.getLayer(MEDICAL_LAYER_POINT)) map.setLayoutProperty(MEDICAL_LAYER_POINT, 'visibility', medVis);
+// ラベルは「ラベル」設定が有効な場合のみ表示したいなら、既存の layerLabelFields.medical を使う
+const medLabelVis = (medVis==='visible' && (layerLabelFields.medical ?? 'P04_002_ja')) ? 'visible' : 'visible';
+if (map.getLayer(MEDICAL_LAYER_LABEL)) map.setLayoutProperty(MEDICAL_LAYER_LABEL, 'visibility', medLabelVis);
+
   const ev = $('chkEmergency').checked ? 'visible' : 'none';
   const sv = $('chkShelter').checked  ? 'visible' : 'none';
   const mv = $('chkMedical')?.checked ? 'visible' : 'none';
@@ -2459,65 +2471,31 @@ function updateLayerVisibility(){
     return {type:'FeatureCollection',features:normalized};
   }
 
-  async function fetchMedicalData(scope,key){
-    if(!MED_PROXY) return EMPTY_FC;
-    if(medicalAbortController){
-      medicalAbortController.abort();
-    }
-    const controller=new AbortController();
-    medicalAbortController=controller;
-    try{
-      const payload={...normalizeScope(scope), requestedAt:new Date().toISOString(), source:'phnfield-collab'};
-      if(controller.signal.aborted){
-        throw new DOMException('Aborted','AbortError');
-      }
-      setMedicalStatus('読込中…',{loading:true});
-      const tryInvoke=async()=>{
-        if(!window.__supa?.functions?.invoke) return null;
-        if(controller.signal.aborted){
-          throw new DOMException('Aborted','AbortError');
-        }
-        const { data, error } = await window.__supa.functions.invoke('medical-proxy',{ body: payload });
-        if(controller.signal.aborted){
-          throw new DOMException('Aborted','AbortError');
-        }
-        if(error){
-          const err=error instanceof Error?error:new Error(error?.message||'Invoke failed');
-          err.__fromInvoke=true;
-          throw err;
-        }
-        return normalizeMedicalResponse(data);
-      };
-      const tryFetch=async(headers)=>{
-        if(controller.signal.aborted){
-          throw new DOMException('Aborted','AbortError');
-        }
-        const resp=await fetch(MED_PROXY,{
-          method:'POST',
-          headers,
-          body:JSON.stringify(payload),
-          signal:controller.signal
-        });
-        if(resp.status===204){
-          return EMPTY_FC;
-        }
-        if(!resp.ok){
-          const text=await resp.text().catch(()=>resp.statusText);
-          const err=new Error(`${resp.status} ${text||resp.statusText}`.trim());
-          err.status=resp.status;
-          throw err;
-        }
-        const contentType=resp.headers.get('content-type')||'';
-        let data=null;
-        if(contentType.includes('application/json')){
-          data=await resp.json();
-        }else{
-          const text=await resp.text();
-          try{ data=text?JSON.parse(text):null; }
-          catch(_){ data=null; }
-        }
-        return normalizeMedicalResponse(data);
-      };
+  async function fetchMedicalData(scope, cacheKey){
+  // 表示範囲（bbox）かタイル指定を組み立てる処理は既存の getScopeFor()/scopeKey() を流用
+  const bbox = map.getBounds();
+  const payload = {
+    bbox: [bbox.getWest(), bbox.getSouth(), bbox.getEast(), bbox.getNorth()].map(v=>+v.toFixed(6)),
+    z: Math.round(map.getZoom()),
+    city: (scope?.mode==='muni' && Array.isArray(scope.munis)) ? scope.munis.join(',') : ''
+  };
+
+  // __supa が無い場合は失敗させる（invoke で呼べないため）
+  if (!window.__supa?.functions?.invoke) {
+    throw new Error('Supabase client not ready (functions.invoke unavailable)');
+  }
+
+  const { data, error } = await window.__supa.functions.invoke('medical-proxy', {
+    body: payload
+  });
+
+  if (error) throw error;
+  if (!data || data.type!=='FeatureCollection') {
+    throw new Error('invalid data from medical-proxy');
+  }
+  return data;
+}
+
 
       let fc=null;
       if(window.__supa?.functions?.invoke){
