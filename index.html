@@ -812,76 +812,7 @@ input[type="number"]{ width:70px; }
   })();
 })();
 
-  // ソースとレイヤが無ければ生成（2) で置いた ensureMedicalLayers と重複してもOK）
-  ensureMedicalLayers();
 
-  map.getSource(MEDICAL_SOURCE_ID).setData(safe);
-  // 必要なら表示/順序を再調整
-  updateLayerVisibility();
-  ensureOverlayOrder();
-}
-
-
-  async function fetchMedicalForMap(){
-    setStatus('医療機関データを読み込み中...');
-    try {
-      await waitForMap();
-
-      const b = map.getBounds();
-      const bbox = `${b.getWest()},${b.getSouth()},${b.getEast()},${b.getNorth()}`;
-      const z = Math.round(map.getZoom()) || 14;
-      const fnUrl = (typeof SUPABASE_URL !== 'undefined' ? SUPABASE_URL : '').replace(/\/$/, '') + '/functions/v1/medical-proxy';
-      const url = fnUrl + '?bbox=' + encodeURIComponent(bbox) + '&z=' + encodeURIComponent(z);
-
-      const res = await fetch(url, { method: 'GET' });
-
-      if(!res.ok){
-        const txt = await res.text().catch(()=>'(no body)');
-        throw new Error(`medical-proxy ${res.status}: ${txt}`);
-      }
-      const fc = await res.json();
-      if(!fc || fc.type !== 'FeatureCollection' || !Array.isArray(fc.features)){
-        throw new Error('不正なレスポンス形式');
-      }
-      showMedicalOnMap(fc);
-      setStatus('');
-      return fc;
-    } catch (err) {
-      console.error('[medical] fetch error', err);
-      setStatus('読み込みに失敗しました: ' + (err.message||err), true);
-      try { removeMedicalFromMap(); } catch(e){}
-      throw err;
-    }
-  }
-
-  if(CHK){
-    CHK.addEventListener('change', async ()=>{
-      if(CHK.checked){
-        try { await fetchMedicalForMap(); } catch(e){}
-      } else {
-        setStatus('');
-        removeMedicalFromMap();
-      }
-    });
-  }
-
-  let _debTimer = null;
-  function onMapMoveEnd(){
-    if(!CHK || !CHK.checked) return;
-    if(_debTimer) clearTimeout(_debTimer);
-    _debTimer = setTimeout(()=>{ fetchMedicalForMap().catch(()=>{}); _debTimer=null; }, 600);
-  }
-
-  (async ()=>{
-    try {
-      await waitForMap(8000);
-      if(map && typeof map.on === 'function'){
-        map.on('moveend', onMapMoveEnd);
-      }
-    } catch(e){}
-  })();
-
-})();
   // ユーティリティ
   const $ = (id)=>document.getElementById(id);
   const toast=(m,bad=false)=>{const el=document.createElement('div');el.className='toast'+(bad?' bad':'');el.textContent=m;document.body.appendChild(el);setTimeout(()=>el.remove(),3000);}
