@@ -2471,14 +2471,28 @@ if (map.getLayer(MEDICAL_LAYER_LABEL)) map.setLayoutProperty(MEDICAL_LAYER_LABEL
     return {type:'FeatureCollection',features:normalized};
   }
 
-  async function fetchMedicalData(scope, cacheKey){
-  // 表示範囲（bbox）かタイル指定を組み立てる処理は既存の getScopeFor()/scopeKey() を流用
-  const bbox = map.getBounds();
-  const payload = {
-    bbox: [bbox.getWest(), bbox.getSouth(), bbox.getEast(), bbox.getNorth()].map(v=>+v.toFixed(6)),
-    z: Math.round(map.getZoom()),
-    city: (scope?.mode==='muni' && Array.isArray(scope.munis)) ? scope.munis.join(',') : ''
-  };
+  async function fetchMedicalData({ bbox, tiles, z, citiesCsv }){
+  const url = new URL(MEDICAL_PROXY_URL);
+  if (bbox) url.searchParams.set('bbox', bbox.join(','));
+  if (Array.isArray(tiles) && tiles.length) {
+    url.searchParams.set('tiles', tiles.join(','));
+  }
+  if (z) url.searchParams.set('z', String(z));
+  if (citiesCsv) url.searchParams.set('city', citiesCsv);
+
+  const res = await fetch(url.toString(), {
+    method: 'GET',
+    mode: 'cors',
+    credentials: 'omit',
+    headers: {
+      'Accept': 'application/json'
+    }
+  });
+  if (!res.ok) throw new Error(`proxy ${res.status}`);
+  const fc = await res.json();
+  return (fc && fc.type === 'FeatureCollection') ? fc : { type:'FeatureCollection', features:[] };
+}
+
 
   // __supa が無い場合は失敗させる（invoke で呼べないため）
   if (!window.__supa?.functions?.invoke) {
@@ -2662,15 +2676,27 @@ if (map.getLayer(MEDICAL_LAYER_LABEL)) map.setLayoutProperty(MEDICAL_LAYER_LABEL
     if(!map.getLayer(MEDICAL_LAYER_POINT)) map.addLayer({id:MEDICAL_LAYER_POINT,type:'circle',source:MEDICAL_SOURCE_ID,layout:{ visibility:'none' },paint:{'circle-radius':5,'circle-color':'#0f766e','circle-stroke-color':'#fff','circle-stroke-width':1}});
     if(!map.getLayer(MEDICAL_LAYER_LABEL)) map.addLayer({id:MEDICAL_LAYER_LABEL,type:'symbol',source:MEDICAL_SOURCE_ID,layout:{ visibility:'none','text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top','text-allow-overlap':false},paint:{'text-halo-width':1.2,'text-halo-color':'#fff','text-color':'#0f172a'}});
     bindClickPopup('emg-circle'); bindClickPopup('shel-circle'); bindClickPopup(MEDICAL_LAYER_POINT);
-      ['chkEmergency','chkShelter','chkMedical'].forEach(id=>$(id)?.addEventListener('change',()=>{ refreshLayers(); }));
+      ['chkEmergency','chkShelter','chkMedical'].forEach(id => {
+  $(id)?.addEventListener('change', () => {
+    // ハザード（FGB）は表示切替だけ
+    if (id === 'chkEmergency' || id === 'chkShelter') {
+      updateLayerVisibility();
+      return;
+    }
+    // 医療機関チェック：ONなら取得・描画、OFFなら消去
+    if (id === 'chkMedical') {
+      if ($('chkMedical').checked) {
+        refreshMedicalLayer();
+      } else {
+        setMedicalStatus('');
+        updateLayerVisibility();
+        const src = map.getSource('medical');
+        if (src) src.setData({ type:'FeatureCollection', features:[] });
+      }
+    }
+  });
+});
 
-      document.querySelectorAll('input[name="areaMode"]').forEach(r=>{
-        r.addEventListener('change',()=>{
-          const v=document.querySelector('input[name="areaMode"]:checked').value;
-          $('prefRow').style.display=(v==='pref'||v==='muni')?'':'none';
-          $('muniRow').style.display=(v==='muni')?'':'none';
-        });
-      });
 
       const extentPanel = $('extentPanel');
       function loadScopeToUI(scope){
@@ -4081,7 +4107,17 @@ refreshObjList();
 initFGB()                 // 避難施設レイヤの初期化
   .then(()=>updateLayerVisibility())
   .catch(e=>console.warn('initFGB failed', e));
-  <script>
+  <script type="module">
+/* ===== app main (module) ===== */
+(async () => {
+  // ==== globals (must be first) ====
+const $ = (id) => document.getElementById(id);
+// 右側パネルやツールバーのレイアウト判定に使うメディアクエリ
+const mobilePanelQuery = window.matchMedia('(max-width: 880px)');
+
+// 医療機関プロキシのURL（あなたの Supabase）
+const MEDICAL_PROXY_URL = 'https://tdoxxwhkvdguyfrofnaw.supabase.co/functions/v1/medical-proxy';
+
 /* === Medical layer: 統一版 === */
 const MEDICAL_SOURCE_ID = 'medical';
 const MEDICAL_LAYER_POINT = 'medical-pt';
@@ -4202,6 +4238,7 @@ let _medTimer=null;
   });
 });
 /* === /Medical layer === */
+})();  // end of IIFE
 </script>
 
 </script>
