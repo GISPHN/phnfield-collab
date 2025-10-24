@@ -1288,7 +1288,7 @@ const map = new maplibregl.Map({
   },
   center:[139.767,35.681], zoom:5.2
 });
-
+window.map = map;
 // 縮尺バー
 map.addControl(new maplibregl.ScaleControl({maxWidth:140, unit:'metric'}), 'bottom-left');
 
@@ -1322,7 +1322,7 @@ map.on('load', () => {
 // 地図操作で医療機関を再取得
 ['moveend','zoomend','dragend'].forEach(ev=>{
   map.on(ev, () => {
-    if ($('chkMedical')?.checked) refreshMedicalLayer();
+    if ($('chkMedical')?.checked) window.__medical?.fetch().catch(()=>{});
   });
 });
 
