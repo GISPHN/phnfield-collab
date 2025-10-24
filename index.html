@@ -513,6 +513,18 @@ input[type="number"]{ width:70px; }
     </div>
 
     <div class="group">
+      <div>医療機関（API）:</div>
+      <div class="layerRow">
+        <label><input type="checkbox" id="chkMedical"> 医療機関</label>
+        <div class="layerActions">
+          <button class="miniBtn" data-layer="medical" data-action="scope">表示範囲</button>
+          <button class="miniBtn" data-layer="medical" data-action="label">ラベル</button>
+        </div>
+      </div>
+      <div id="medicalStatus" class="small" style="margin-left:26px;display:none;color:#64748b"></div>
+    </div>
+
+    <div class="group">
       <div>避難施設（FGB）:</div>
       <div class="layerRow">
         <label><input type="checkbox" id="chkEmergency"> 指定<strong>緊急避難場所</strong>（赤）</label>
@@ -846,6 +858,7 @@ input[type="number"]{ width:70px; }
   const panelToggleBtn=$('panelToggle');
   const objectToggleBtn=$('objectToggle');
   const mobilePanelQuery=window.matchMedia('(max-width: 1024px)');
+  window.__mobilePanelQuery = mobilePanelQuery;
   const topbarEl=document.querySelector('.topbar');
 
   (function ensureSingleMedicalLayerEntry(){
@@ -1281,6 +1294,9 @@ const map = new maplibregl.Map({
       hillshade: HILLSHADE_SOURCE,
       base: BASE_SOURCES.osm
     },
+    center:[139.767,35.681], zoom:5.2
+  });
+  window.map = map;
     layers:[
       { id:'hillshade', type:'raster', source:'hillshade', paint:{ 'raster-opacity': 1.0 } },
       { id:'base',      type:'raster', source:'base',      paint:{ 'raster-opacity': BASE_OPACITY } }
@@ -1502,6 +1518,10 @@ function ensureHazardLayers(){
   // Supabase Storage の Public URL をそのまま貼ってください（署名URLではありません）
   const FGB_URL_EMERGENCY='https://tdoxxwhkvdguyfrofnaw.supabase.co/storage/v1/object/public/data/Designated%20Emergency%20Evacuation%20Site.fgb'; // ←置換（先頭 e）
   const FGB_URL_SHELTER  ='https://tdoxxwhkvdguyfrofnaw.supabase.co/storage/v1/object/public/data/Designated%20Shelter%20for%20Evacuees.fgb';     // ←置換
+  const MED_PROXY = 'https://tdoxxwhkvdguyfrofnaw.supabase.co/functions/v1/medical-proxy';
+  const MEDICAL_SOURCE_ID='medical';
+  const MEDICAL_LAYER_POINT='med-circle';
+  const MEDICAL_LAYER_LABEL='med-label';
 
 // 自己ホストした flatgeobuf を “必ず最初に” 読みにいく
 const LOCAL_FGB_LIB = './flatgeobuf-geojson.min.js';
@@ -1569,9 +1589,31 @@ async function readFGB_fromURL(url) {
   }
 
   // --- (A) URL ストリーミングでパース（成功すれば最速） ---
+  const collectAsyncItems = async (iterable, target)=>{
+    if(!iterable) return;
+    const asyncItSymbol=(typeof Symbol==='function' && Symbol.asyncIterator) ? Symbol.asyncIterator : null;
+    if(asyncItSymbol && typeof iterable[asyncItSymbol]==='function'){
+      const iterator=iterable[asyncItSymbol]();
+      while(true){
+        const step=await iterator.next();
+        if(step.done) break;
+        target.push(step.value);
+      }
+      return;
+    }
+    if(typeof iterable.then==='function'){
+      const resolved=await iterable;
+      return collectAsyncItems(resolved,target);
+    }
+    const itSymbol=(typeof Symbol==='function' && Symbol.iterator) ? Symbol.iterator : null;
+    if(itSymbol && typeof iterable[itSymbol]==='function'){
+      for(const item of iterable) target.push(item);
+    }
+  };
+
   try {
     const featsA = [];
-    for await (const f of deserialize(url)) featsA.push(f);
+    await collectAsyncItems(deserialize(url), featsA);
     if (featsA.length) return featsA;
   } catch (e) {
     console.warn('[FGB] stream parse failed, fallback to full download ->', e.message);
@@ -1583,7 +1625,7 @@ async function readFGB_fromURL(url) {
   if (!resp.ok) throw new Error(`FGBダウンロード失敗 ${resp.status} ${resp.statusText}`);
   const buf = await resp.arrayBuffer();
   const featsB = [];
-  for await (const f of deserialize(new Uint8Array(buf))) featsB.push(f);
+  await collectAsyncItems(deserialize(new Uint8Array(buf)), featsB);
   if (!featsB.length) throw new Error('FGBの中身が空です');
   return featsB;
 }
@@ -2471,6 +2513,84 @@ if (map.getLayer(MEDICAL_LAYER_LABEL)) map.setLayoutProperty(MEDICAL_LAYER_LABEL
     return {type:'FeatureCollection',features:normalized};
   }
 
+  async function fetchMedicalData(scope,key){
+    if(!MED_PROXY) return EMPTY_FC;
+    if(medicalAbortController){
+      medicalAbortController.abort();
+    }
+    const controller=new AbortController();
+    medicalAbortController=controller;
+    try{
+      const normalizedScope=normalizeScope(scope);
+      const payload={
+        scope:normalizedScope,
+        scopeKey:key||JSON.stringify(normalizedScope),
+        requestedAt:new Date().toISOString(),
+        source:'phnfield-collab'
+      };
+      Object.assign(payload,normalizedScope);
+      if(controller.signal.aborted){
+        throw new DOMException('Aborted','AbortError');
+      }
+      setMedicalStatus('読込中…',{loading:true});
+      const tryInvoke=async()=>{
+        if(!window.__supa?.functions?.invoke) return null;
+        if(controller.signal.aborted){
+          throw new DOMException('Aborted','AbortError');
+        }
+        const { data, error } = await window.__supa.functions.invoke('medical-proxy',{ body: payload });
+        if(controller.signal.aborted){
+          throw new DOMException('Aborted','AbortError');
+        }
+        if(error){
+          const err=error instanceof Error?error:new Error(error?.message||'Invoke failed');
+          err.__fromInvoke=true;
+          throw err;
+        }
+        return normalizeMedicalResponse(data);
+      };
+      const tryFetch=async(headers)=>{
+        if(controller.signal.aborted){
+          throw new DOMException('Aborted','AbortError');
+        }
+        const resp=await fetch(MED_PROXY,{
+          method:'POST',
+          headers,
+          body:JSON.stringify(payload),
+          signal:controller.signal,
+          mode:'cors',
+          credentials:'omit',
+          cache:'no-store',
+          referrerPolicy:'no-referrer'
+        });
+        if(resp.status===204){
+          return EMPTY_FC;
+        }
+        if(!resp.ok){
+          const text=await resp.text().catch(()=>resp.statusText);
+          const err=new Error(`${resp.status} ${text||resp.statusText}`.trim());
+          err.status=resp.status;
+          throw err;
+        }
+        const rawBody=await resp.text().catch(()=> '');
+        const trimmed=rawBody.trim();
+        if(!trimmed){
+          return normalizeMedicalResponse(null);
+        }
+        try{
+          const parsed=JSON.parse(trimmed);
+          return normalizeMedicalResponse(parsed);
+        }catch(parseErr){
+          const snippet=trimmed.slice(0,2000);
+          console.warn('[medical] invalid JSON response', parseErr, snippet);
+          const err=new Error('医療機関データの形式が不正です');
+          err.status=resp.status;
+          err.code='INVALID_MEDICAL_JSON';
+          err.responseText=snippet;
+          throw err;
+        }
+      };
+
       let fc=null;
       if(window.__supa?.functions?.invoke){
         try{
@@ -2478,6 +2598,44 @@ if (map.getLayer(MEDICAL_LAYER_LABEL)) map.setLayoutProperty(MEDICAL_LAYER_LABEL
         }catch(err){
           if(err.name==='AbortError') throw err;
           console.warn('[medical] invoke failed ->', err);
+        }
+      }
+      if(!fc){
+        const headers={'Content-Type':'application/json','Accept':'application/json','X-Client-Info':'phnfield-collab-medical-layer/1.0'};
+        if(SUPABASE_ANON){
+          headers.apikey=SUPABASE_ANON;
+        }
+        let bearerToken=null;
+        if(window.__supa?.auth?.getSession){
+          bearerToken=await resolveSupabaseAccessToken();
+        }
+        let authHeader=null;
+        if(bearerToken){
+          authHeader=`Bearer ${bearerToken}`;
+        }else if(SUPABASE_ANON){
+          authHeader=`Bearer ${SUPABASE_ANON}`;
+        }
+        if(authHeader){
+          headers.Authorization=authHeader;
+        }
+        try{
+          fc=await tryFetch(headers);
+        }catch(err){
+          if(err.name==='AbortError') throw err;
+          const statusCode=err.status||0;
+          const hadAuth=!!headers.Authorization;
+          if(hadAuth && (statusCode===401 || statusCode===403 || err.name==='TypeError')){
+            console.warn('[medical] retrying medical proxy fetch without Authorization header');
+            delete headers.Authorization;
+            try{
+              fc=await tryFetch(headers);
+            }catch(innerErr){
+              if(innerErr.name==='AbortError') throw innerErr;
+              throw innerErr;
+            }
+          }else{
+            throw err;
+          }
         }
       }
       if(!fc){
@@ -2490,6 +2648,10 @@ if (map.getLayer(MEDICAL_LAYER_LABEL)) map.setLayoutProperty(MEDICAL_LAYER_LABEL
         return null;
       }
       console.warn('[medical] fetch failed ->', err);
+      if(err.code==='INVALID_MEDICAL_JSON'){
+        setMedicalStatus('医療機関データの形式が不正です',{error:true});
+        return null;
+      }
       const msg=String(err.message||'');
       if(msg.includes('401')||msg.includes('403')){
         setMedicalStatus('医療機関データへのアクセスが拒否されました',{error:true});
@@ -2636,27 +2798,15 @@ if (map.getLayer(MEDICAL_LAYER_LABEL)) map.setLayoutProperty(MEDICAL_LAYER_LABEL
     if(!map.getLayer(MEDICAL_LAYER_POINT)) map.addLayer({id:MEDICAL_LAYER_POINT,type:'circle',source:MEDICAL_SOURCE_ID,layout:{ visibility:'none' },paint:{'circle-radius':5,'circle-color':'#0f766e','circle-stroke-color':'#fff','circle-stroke-width':1}});
     if(!map.getLayer(MEDICAL_LAYER_LABEL)) map.addLayer({id:MEDICAL_LAYER_LABEL,type:'symbol',source:MEDICAL_SOURCE_ID,layout:{ visibility:'none','text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top','text-allow-overlap':false},paint:{'text-halo-width':1.2,'text-halo-color':'#fff','text-color':'#0f172a'}});
     bindClickPopup('emg-circle'); bindClickPopup('shel-circle'); bindClickPopup(MEDICAL_LAYER_POINT);
-      ['chkEmergency','chkShelter','chkMedical'].forEach(id => {
-  $(id)?.addEventListener('change', () => {
-    // ハザード（FGB）は表示切替だけ
-    if (id === 'chkEmergency' || id === 'chkShelter') {
-      updateLayerVisibility();
-      return;
-    }
-    // 医療機関チェック：ONなら取得・描画、OFFなら消去
-    if (id === 'chkMedical') {
-      if ($('chkMedical').checked) {
-        refreshMedicalLayer();
-      } else {
-        setMedicalStatus('');
-        updateLayerVisibility();
-        const src = map.getSource('medical');
-        if (src) src.setData({ type:'FeatureCollection', features:[] });
-      }
-    }
-  });
-});
+      ['chkEmergency','chkShelter','chkMedical'].forEach(id=>$(id)?.addEventListener('change',()=>{ refreshLayers(); }));
 
+      document.querySelectorAll('input[name="areaMode"]').forEach(r=>{
+        r.addEventListener('change',()=>{
+          const v=document.querySelector('input[name="areaMode"]:checked').value;
+          $('prefRow').style.display=(v==='pref'||v==='muni')?'':'none';
+          $('muniRow').style.display=(v==='muni')?'':'none';
+        });
+      });
 
       const extentPanel = $('extentPanel');
       function loadScopeToUI(scope){
@@ -3064,11 +3214,22 @@ const objToolbarBtn=document.getElementById('btnObj');
 const objSubtools=document.getElementById('objSubtools');
 const objToolbar=document.getElementById('objToolbar');
 let lastObjSubtoolsTop=null;
+const FALLBACK_MEDIA_QUERY={
+  matches:false,
+  addEventListener:()=>{},
+  removeEventListener:()=>{},
+  addListener:()=>{},
+  removeListener:()=>{}
+};
+const panelMediaQuery=(typeof mobilePanelQuery!=='undefined' && mobilePanelQuery)
+  || (typeof window!=='undefined' && window.__mobilePanelQuery)
+  || (typeof window!=='undefined' && typeof window.matchMedia==='function' && window.matchMedia('(max-width: 1024px)'))
+  || FALLBACK_MEDIA_QUERY;
 function updateObjSubtoolsLayout({force=false}={}){
   if(!objSubtools) return;
   const isOpen=objSubtools.style.display==='flex';
-  if(!isOpen || !mobilePanelQuery.matches){
-    if(force || !mobilePanelQuery.matches){
+  if(!isOpen || !panelMediaQuery.matches){
+    if(force || !panelMediaQuery.matches){
       objSubtools.classList.remove('mobile-subtools');
       objSubtools.style.removeProperty('--obj-subtools-top');
       lastObjSubtoolsTop=null;
@@ -3093,28 +3254,27 @@ const syncObjToolbar=open=>{
   if(!objToolbarBtn || !objSubtools) return;
   if(open){
     objSubtools.style.display='flex';
-    if(mobilePanelQuery.matches){
+    if(panelMediaQuery.matches){
       objSubtools.classList.add('mobile-floating');
       objSubtools.style.marginLeft='0';
       if(typeof objToolbarBtn.scrollIntoView==='function'){
         objToolbarBtn.scrollIntoView({ behavior:'smooth', block:'nearest', inline:'center' });
       }
-      positionObjSubtools();
     }else{
       objSubtools.classList.remove('mobile-floating');
       objSubtools.style.marginLeft='8px';
-      objSubtools.style.removeProperty('--obj-subtool-top');
+      objSubtools.style.removeProperty('--obj-subtools-top');
     }
   }else{
     objSubtools.style.display='none';
     objSubtools.classList.remove('mobile-floating');
-    objSubtools.style.removeProperty('--obj-subtool-top');
-    objSubtools.style.marginLeft=mobilePanelQuery.matches?'0':'8px';
+    objSubtools.style.removeProperty('--obj-subtools-top');
+    objSubtools.style.marginLeft=panelMediaQuery.matches?'0':'8px';
   }
   objToolbarBtn.classList.toggle('toggle-on', !!open);
   objToolbar?.classList.toggle('is-open', !!open);
   if(open){
-    if(mobilePanelQuery.matches && typeof objToolbarBtn.scrollIntoView==='function'){
+    if(panelMediaQuery.matches && typeof objToolbarBtn.scrollIntoView==='function'){
       objToolbarBtn.scrollIntoView({ behavior:'smooth', block:'nearest', inline:'center' });
     }
     updateObjSubtoolsLayout({force:true});
@@ -3128,10 +3288,10 @@ const handleResponsiveLayoutChange=()=>{
   updateObjSubtoolsLayout({force:true});
   positionSurveyPanel({force:true});
 };
-if(typeof mobilePanelQuery.addEventListener==='function'){
-  mobilePanelQuery.addEventListener('change', handleResponsiveLayoutChange);
-}else if(typeof mobilePanelQuery.addListener==='function'){
-  mobilePanelQuery.addListener(handleResponsiveLayoutChange);
+if(typeof panelMediaQuery.addEventListener==='function'){
+  panelMediaQuery.addEventListener('change', handleResponsiveLayoutChange);
+}else if(typeof panelMediaQuery.addListener==='function'){
+  panelMediaQuery.addListener(handleResponsiveLayoutChange);
 }
 const handleViewportChange=()=>{
   updateObjSubtoolsLayout({force:true});
