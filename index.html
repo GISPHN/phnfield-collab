@@ -500,6 +500,18 @@ input[type="number"]{ width:70px; }
     </div>
 
     <div class="group">
+      <div>医療機関（API）:</div>
+      <div class="layerRow">
+        <label><input type="checkbox" id="chkMedical"> 医療機関</label>
+        <div class="layerActions">
+          <button class="miniBtn" data-layer="medical" data-action="scope">表示範囲</button>
+          <button class="miniBtn" data-layer="medical" data-action="label">ラベル</button>
+        </div>
+      </div>
+      <div id="medicalStatus" class="small" style="margin-left:26px;display:none;color:#64748b"></div>
+    </div>
+
+    <div class="group">
       <div>避難施設（FGB）:</div>
       <div class="layerRow">
         <label><input type="checkbox" id="chkEmergency"> 指定<strong>緊急避難場所</strong>（赤）</label>
@@ -705,8 +717,40 @@ input[type="number"]{ width:70px; }
   const objectDrawer=$('objectDrawer');
   const panelToggleBtn=$('panelToggle');
   const objectToggleBtn=$('objectToggle');
-  const mobilePanelQuery=window.matchMedia('(max-width: 1024px)');
+  const fallbackMediaQuery={
+    matches:false,
+    addEventListener:()=>{},
+    removeEventListener:()=>{},
+    addListener:()=>{},
+    removeListener:()=>{}
+  };
+  const mobilePanelQuery=(()=>{
+    if(typeof window.matchMedia==='function'){
+      try{
+        const query=window.matchMedia('(max-width: 1024px)');
+        return query || fallbackMediaQuery;
+      }catch(err){
+        console.warn('matchMedia initialization failed', err);
+      }
+    }
+    return fallbackMediaQuery;
+  })();
+  window.__mobilePanelQuery = mobilePanelQuery;
+  window.__fallbackMobilePanelQuery = fallbackMediaQuery;
   const topbarEl=document.querySelector('.topbar');
+
+  (function ensureSingleMedicalLayerEntry(){
+    const inputs=document.querySelectorAll('#panel input#chkMedical');
+    inputs.forEach((input,idx)=>{
+      if(idx===0) return;
+      const group=input.closest('.group');
+      if(group){
+        group.remove();
+      }else{
+        input.remove();
+      }
+    });
+  })();
 
   const syncPanelToggleState=()=>{
     if(panelToggleBtn) panelToggleBtn.setAttribute('aria-expanded', layerPanel?.classList.contains('is-open') ? 'true' : 'false');
@@ -1088,6 +1132,25 @@ input[type="number"]{ width:70px; }
 
   // 都道府県
   const PREFS=["北海道","青森県","岩手県","宮城県","秋田県","山形県","福島県","茨城県","栃木県","群馬県","埼玉県","千葉県","東京都","神奈川県","新潟県","富山県","石川県","福井県","山梨県","長野県","岐阜県","静岡県","愛知県","三重県","滋賀県","京都府","大阪府","兵庫県","奈良県","和歌山県","鳥取県","島根県","岡山県","広島県","山口県","徳島県","香川県","愛媛県","高知県","福岡県","佐賀県","長崎県","熊本県","大分県","宮崎県","鹿児島県","沖縄県"];
+  const PREF_CODE_MAP={
+    '北海道':'01','青森県':'02','岩手県':'03','宮城県':'04','秋田県':'05','山形県':'06','福島県':'07',
+    '茨城県':'08','栃木県':'09','群馬県':'10','埼玉県':'11','千葉県':'12','東京都':'13','神奈川県':'14',
+    '新潟県':'15','富山県':'16','石川県':'17','福井県':'18','山梨県':'19','長野県':'20','岐阜県':'21',
+    '静岡県':'22','愛知県':'23','三重県':'24','滋賀県':'25','京都府':'26','大阪府':'27','兵庫県':'28',
+    '奈良県':'29','和歌山県':'30','鳥取県':'31','島根県':'32','岡山県':'33','広島県':'34','山口県':'35',
+    '徳島県':'36','香川県':'37','愛媛県':'38','高知県':'39','福岡県':'40','佐賀県':'41','長崎県':'42',
+    '熊本県':'43','大分県':'44','宮崎県':'45','鹿児島県':'46','沖縄県':'47'
+  };
+  const MUNICIPAL_CODE_FIELDS=[
+    '全国地方公共団体コード','全国地方公共団体コード(平成27年)','全国地方公共団体コード（平成27年）','全国地方公共団体コード(令和2年)',
+    '全国地方公共団体コード（令和2年）','全国地方公共団体コード_平成27年','全国地方公共団体コード_令和2年','全国地方公共団体コード2015',
+    '全国地方公共団体コード2020','全国地方公共団体コード_2015','全国地方公共団体コード_2020','市区町村コード','市町村コード',
+    '都道府県市区町村コード','LGCODE','LG_CODE','JCODE','N03_007','N03_007_2','P34_003','P35_001','P35_002'
+  ];
+  const PREF_PART_CODE_FIELDS=['都道府県コード','道府県コード','県コード','支庁コード（都道府県）','PrefCode','pref_cd','P34_001','P05_001','N03_001'];
+  const CITY_PART_CODE_FIELDS=['市区町村コード','市町村コード','市区町村番号','CityCode','city_cd','P34_002','P05_002','N03_003'];
+  const BRANCH_CODE_FIELDS=['行政区域コード','行政区コード','支所コード','枝番','N03_004','N03_007','BranchCode'];
+  const municipalIndex=new Map();
 
   /*************** ベースマップ（OSM & 地理院タイル） ***************/
   const BASE_SOURCES = {
@@ -1107,6 +1170,7 @@ const map = new maplibregl.Map({
     },
     center:[139.767,35.681], zoom:5.2
   });
+  window.map = map;
 // 縮尺バー
 map.addControl(new maplibregl.ScaleControl({maxWidth:140, unit:'metric'}), 'bottom-left');
 
@@ -1224,10 +1288,24 @@ $('basemapSel').addEventListener('change', ()=>{
 });
 
   /*************** Draw（ポイント/ライン/ポリゴン + 円ツール） ***************/
-const draw = new MapboxDraw({
-  displayControlsDefault:false,
-  controls:{} // ← すべてUI非表示
-});
+const DRAW_STUB_FC={type:'FeatureCollection',features:[]};
+function createDrawInstance(){
+  if(window.MapboxDraw && typeof window.MapboxDraw==='function'){
+    try{
+      return new window.MapboxDraw({ displayControlsDefault:false, controls:{} });
+    }catch(err){
+      console.error('MapboxDraw init failed', err);
+    }
+  }
+  console.warn('MapboxDraw is not available. Object editing toolbar is disabled.');
+  return {
+    add:()=>DRAW_STUB_FC,
+    deleteAll:()=>{},
+    getAll:()=>DRAW_STUB_FC
+  };
+}
+const draw = createDrawInstance();
+window.draw = draw;
 // map.addControl(draw,'top-right'); ← 追加しない
 
   /*************** ハザード（洪水=1、土砂=3まとめ） ***************/
@@ -1282,6 +1360,9 @@ const draw = new MapboxDraw({
   const FGB_URL_EMERGENCY='https://tdoxxwhkvdguyfrofnaw.supabase.co/storage/v1/object/public/data/Designated%20Emergency%20Evacuation%20Site.fgb'; // ←置換（先頭 e）
   const FGB_URL_SHELTER  ='https://tdoxxwhkvdguyfrofnaw.supabase.co/storage/v1/object/public/data/Designated%20Shelter%20for%20Evacuees.fgb';     // ←置換
   const MED_PROXY = 'https://tdoxxwhkvdguyfrofnaw.supabase.co/functions/v1/medical-proxy';
+  const MEDICAL_SOURCE_ID='medical';
+  const MEDICAL_LAYER_POINT='med-circle';
+  const MEDICAL_LAYER_LABEL='med-label';
 
 // 自己ホストした flatgeobuf を “必ず最初に” 読みにいく
 const LOCAL_FGB_LIB = './flatgeobuf-geojson.min.js';
@@ -1349,9 +1430,31 @@ async function readFGB_fromURL(url) {
   }
 
   // --- (A) URL ストリーミングでパース（成功すれば最速） ---
+  const collectAsyncItems = async (iterable, target)=>{
+    if(!iterable) return;
+    const asyncItSymbol=(typeof Symbol==='function' && Symbol.asyncIterator) ? Symbol.asyncIterator : null;
+    if(asyncItSymbol && typeof iterable[asyncItSymbol]==='function'){
+      const iterator=iterable[asyncItSymbol]();
+      while(true){
+        const step=await iterator.next();
+        if(step.done) break;
+        target.push(step.value);
+      }
+      return;
+    }
+    if(typeof iterable.then==='function'){
+      const resolved=await iterable;
+      return collectAsyncItems(resolved,target);
+    }
+    const itSymbol=(typeof Symbol==='function' && Symbol.iterator) ? Symbol.iterator : null;
+    if(itSymbol && typeof iterable[itSymbol]==='function'){
+      for(const item of iterable) target.push(item);
+    }
+  };
+
   try {
     const featsA = [];
-    for await (const f of deserialize(url)) featsA.push(f);
+    await collectAsyncItems(deserialize(url), featsA);
     if (featsA.length) return featsA;
   } catch (e) {
     console.warn('[FGB] stream parse failed, fallback to full download ->', e.message);
@@ -1363,7 +1466,7 @@ async function readFGB_fromURL(url) {
   if (!resp.ok) throw new Error(`FGBダウンロード失敗 ${resp.status} ${resp.statusText}`);
   const buf = await resp.arrayBuffer();
   const featsB = [];
-  for await (const f of deserialize(new Uint8Array(buf))) featsB.push(f);
+  await collectAsyncItems(deserialize(new Uint8Array(buf)), featsB);
   if (!featsB.length) throw new Error('FGBの中身が空です');
   return featsB;
 }
@@ -1383,16 +1486,112 @@ async function readFGB_fromURL(url) {
 
   const MUNI_COL_CANDIDATES=["都道府県名及び市町村名","都道府県及び市町村名"];
   const LABEL_CANDIDATES   =["施設・場所名","住所","共通ID","NO"];
+  const DEFAULT_MED_LABEL='P04_003_ja';
   const CAP_TAGS=[
     '1.行政と政治','2.人口統計','3.歴史、民族性、価値観','4.物理的環境','5.保健医療と社会福祉','6.経済','7.交通と安全','8.教育・レクリエーション','9.情報とコミュニケーション'
   ];
   const escapeXml=(str)=>String(str??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;').replace(/\r?\n/g,'&#10;');
   const escapeHtml=(str)=>String(str??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  const toNumericString=(value)=>{
+    if(value===undefined||value===null) return '';
+    const str=String(value).trim();
+    if(!str) return '';
+    const digits=str.replace(/\D+/g,'');
+    return digits;
+  };
+  const splitPrefCityLabel=(full)=>{
+    const text=String(full||'').trim();
+    if(!text) return {pref:'',city:''};
+    const pref=PREFS.find(p=>text.startsWith(p))||'';
+    const city=pref?text.slice(pref.length).trim():text;
+    return {pref,city};
+  };
+  const canonicalMuniLabel=(full)=>{
+    const {pref,city}=splitPrefCityLabel(full);
+    if(pref && city) return `${pref} ${city}`.trim();
+    if(pref) return pref;
+    return city;
+  };
+  const normalizeMunicipalCode=(code)=>{
+    const digits=toNumericString(code);
+    if(!digits) return '';
+    if(digits.length<=4) return digits.padStart(5,'0');
+    if(digits.length===5) return digits;
+    return digits.padStart(6,'0');
+  };
+  const deriveMunicipalCode=(props={})=>{
+    for(const field of MUNICIPAL_CODE_FIELDS){
+      if(!(field in props)) continue;
+      const normalized=normalizeMunicipalCode(props[field]);
+      if(normalized) return normalized;
+    }
+    let prefDigits='';
+    for(const field of PREF_PART_CODE_FIELDS){
+      if(!(field in props)) continue;
+      const digits=toNumericString(props[field]);
+      if(digits){ prefDigits=digits.padStart(2,'0'); break; }
+    }
+    if(!prefDigits) return '';
+    let cityDigits='';
+    for(const field of CITY_PART_CODE_FIELDS){
+      if(!(field in props)) continue;
+      const digits=toNumericString(props[field]);
+      if(digits){ cityDigits=digits.padStart(3,'0'); break; }
+    }
+    if(!cityDigits) return '';
+    let branch='';
+    for(const field of BRANCH_CODE_FIELDS){
+      if(!(field in props)) continue;
+      const digits=toNumericString(props[field]);
+      if(digits){ branch=digits.padStart(1,'0'); break; }
+    }
+    const combined=`${prefDigits}${cityDigits}${branch}`;
+    if(branch){
+      return combined.slice(0,6).padStart(6,'0');
+    }
+    return combined.slice(0,5).padStart(5,'0');
+  };
+  function buildMunicipalIndex(features,labelField){
+    municipalIndex.clear();
+    if(!labelField) return;
+    (features||[]).forEach(feat=>{
+      const props=feat?.properties||{};
+      const rawLabel=String(props[labelField]||'').trim();
+      if(!rawLabel) return;
+      const canonical=canonicalMuniLabel(rawLabel);
+      if(!canonical) return;
+      const {pref,city}=splitPrefCityLabel(canonical);
+      const code=deriveMunicipalCode(props);
+      const existing=municipalIndex.get(canonical);
+      if(existing){
+        if(!existing.code && code) existing.code=code;
+      }else{
+        municipalIndex.set(canonical,{pref,city,code:code||''});
+      }
+    });
+  }
+  const getMunicipalEntry=(label)=>{
+    const canonical=canonicalMuniLabel(label);
+    if(!canonical){
+      return {pref:'',city:'',code:''};
+    }
+    const stored=municipalIndex.get(canonical);
+    if(stored){
+      return {pref:stored.pref,city:stored.city,code:stored.code||''};
+    }
+    const {pref,city}=splitPrefCityLabel(canonical);
+    return {pref,city,code:''};
+  };
   let cacheEmergency=null, cacheShelter=null, COL_MUNI=null;
+  const medicalCache=new Map();
+  let lastMedicalFeatures=[];
+  let currentMedicalKey=null;
   let layerScopeGlobal={ mode:'all', prefs:[], munis:[] };
-  const layerScopeOverrides={ emergency:null, shelter:null };
-  const layerLabelFields={ emergency:null, shelter:null };
-  const layerColumns={ emergency:[], shelter:[] };
+  const SCOPE_LABELS={ global:'(全レイヤ)', emergency:'(緊急避難場所)', shelter:'(避難所)', medical:'(医療機関)' };
+  const layerScopeOverrides={ emergency:null, shelter:null, medical:null };
+  const layerLabelFields={ emergency:null, shelter:null, medical:DEFAULT_MED_LABEL };
+  const layerColumns={ emergency:[], shelter:[], medical:[] };
+  let medicalAbortController=null;
   let currentScopeTarget='global';
   const surveyState={
     panelVisible:false,
@@ -1425,6 +1624,39 @@ async function readFGB_fromURL(url) {
   const surveyCapWrap=$('surveyCapSelectWrap');
   const surveyNoteMoveWrap=$('surveyNoteMoveWrap');
   const surveyRecBadge=$('surveyRecBadge');
+  const medicalStatusEl=$('medicalStatus');
+  function setMedicalStatus(message,{error=false,loading=false}={}){
+    if(!medicalStatusEl) return;
+    if(!message){
+      medicalStatusEl.style.display='none';
+      medicalStatusEl.textContent='';
+      medicalStatusEl.style.color='#64748b';
+      return;
+    }
+    medicalStatusEl.textContent=message;
+    medicalStatusEl.style.display='block';
+    if(error){
+      medicalStatusEl.style.color='#dc2626';
+    }else if(loading){
+      medicalStatusEl.style.color='#0ea5e9';
+    }else{
+      medicalStatusEl.style.color='#64748b';
+    }
+  }
+  async function resolveSupabaseAccessToken(){
+    if(!window.__supa?.auth?.getSession) return null;
+    try{
+      const { data, error } = await window.__supa.auth.getSession();
+      if(error){
+        console.warn('[medical] getSession error ->', error);
+        return null;
+      }
+      return data?.session?.access_token || null;
+    }catch(err){
+      console.warn('[medical] getSession failed ->', err);
+      return null;
+    }
+  }
   window.__surveyNotePopup=null;
   makeDraggable(surveyPanelEl);
   makeDraggable(surveyNotePanelEl);
@@ -1936,22 +2168,112 @@ async function readFGB_fromURL(url) {
 function updateLayerVisibility(){
   const ev = $('chkEmergency').checked ? 'visible' : 'none';
   const sv = $('chkShelter').checked  ? 'visible' : 'none';
+  const mv = $('chkMedical')?.checked ? 'visible' : 'none';
   if(map.getLayer('emg-circle'))  map.setLayoutProperty('emg-circle','visibility', ev);
   if(map.getLayer('shel-circle')) map.setLayoutProperty('shel-circle','visibility', sv);
+  if(map.getLayer(MEDICAL_LAYER_POINT)) map.setLayoutProperty(MEDICAL_LAYER_POINT,'visibility', mv||'none');
   const evLabel = (ev==='visible' && layerLabelFields.emergency) ? 'visible' : 'none';
   const svLabel = (sv==='visible' && layerLabelFields.shelter) ? 'visible' : 'none';
+  const mvLabel = (mv==='visible' && layerLabelFields.medical) ? 'visible' : 'none';
   if(map.getLayer('emg-label'))   map.setLayoutProperty('emg-label','visibility', evLabel);
   if(map.getLayer('shel-label'))  map.setLayoutProperty('shel-label','visibility', svLabel);
+  if(map.getLayer(MEDICAL_LAYER_LABEL)) map.setLayoutProperty(MEDICAL_LAYER_LABEL,'visibility', mvLabel||'none');
 }
 
-  function fitToData(){
-    const fc1=map.getSource('emergency')._data;
-    const fc2=map.getSource('shelter')._data;
-    const all=[...fc1.features,...fc2.features]; if(!all.length) return;
-    let minX=180,minY=90,maxX=-180,maxY=-90;
-    all.forEach(f=>{ if(f.geometry.type!=='Point') return; const [x,y]=f.geometry.coordinates;
-      if(x<minX)minX=x;if(y<minY)minY=y;if(x>maxX)maxX=x;if(y>maxY)maxY=y;});
-    if(minX<maxX&&minY<maxY) map.fitBounds([[minX,minY],[maxX,maxY]],{padding:40,maxZoom:13});
+    function computeFeatureBounds(features){
+      let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    (features||[]).forEach(f=>{
+      const geom=f?.geometry;
+      if(!geom || geom.type!=='Point') return;
+      const coords=Array.isArray(geom.coordinates)?geom.coordinates:[];
+      if(coords.length<2) return;
+      const x=Number(coords[0]);
+      const y=Number(coords[1]);
+      if(!Number.isFinite(x)||!Number.isFinite(y)) return;
+      if(x<minX) minX=x;
+      if(y<minY) minY=y;
+      if(x>maxX) maxX=x;
+      if(y>maxY) maxY=y;
+    });
+    if(minX===Infinity || minY===Infinity || maxX===-Infinity || maxY===-Infinity) return null;
+    if(minX===maxX && minY===maxY) return [[minX,minY],[maxX,maxY]];
+    return [[minX,minY],[maxX,maxY]];
+    }
+    function toBbox(bounds){
+      if(!bounds) return null;
+      if(Array.isArray(bounds) && bounds.length===2){
+        const sw=bounds[0], ne=bounds[1];
+        if(Array.isArray(sw) && sw.length>=2 && Array.isArray(ne) && ne.length>=2){
+          const [minX,minY]=sw;
+          const [maxX,maxY]=ne;
+          if([minX,minY,maxX,maxY].every(v=>Number.isFinite(v))){
+            return [minX,minY,maxX,maxY];
+          }
+        }
+      }
+      if(bounds && typeof bounds.getSouthWest==='function' && typeof bounds.getNorthEast==='function'){
+        const sw=bounds.getSouthWest();
+        const ne=bounds.getNorthEast();
+        const minX=Number(sw?.lng ?? sw?.lon ?? sw?.x);
+        const minY=Number(sw?.lat ?? sw?.y);
+        const maxX=Number(ne?.lng ?? ne?.lon ?? ne?.x);
+        const maxY=Number(ne?.lat ?? ne?.y);
+        if([minX,minY,maxX,maxY].every(v=>Number.isFinite(v))){
+          return [minX,minY,maxX,maxY];
+        }
+      }
+      if(bounds && typeof bounds._sw==='object' && typeof bounds._ne==='object'){
+        const sw=bounds._sw;
+        const ne=bounds._ne;
+        const minX=Number(sw?.lng ?? sw?.lon ?? sw?.x);
+        const minY=Number(sw?.lat ?? sw?.y);
+        const maxX=Number(ne?.lng ?? ne?.lon ?? ne?.x);
+        const maxY=Number(ne?.lat ?? ne?.y);
+        if([minX,minY,maxX,maxY].every(v=>Number.isFinite(v))){
+          return [minX,minY,maxX,maxY];
+        }
+      }
+      return null;
+    }
+    const DEFAULT_JAPAN_BBOX=[122.93457,24.04063,153.98667,45.55148];
+    function getViewBbox(){
+      if(typeof map==='undefined' || !map || typeof map.getBounds!=='function') return null;
+      try{
+        return toBbox(map.getBounds());
+      }catch(err){
+        console.warn('getViewBbox', err);
+        return null;
+      }
+    }
+    function deriveScopeBbox(normalizedScope){
+      const features=[];
+      const collect=(list)=>{
+        if(!Array.isArray(list) || !list.length) return;
+        list.forEach(feat=>{
+          try{
+            if(filterByScope(normalizedScope, feat)) features.push(feat);
+          }catch(err){
+            console.warn('deriveScopeBbox/filter', err);
+          }
+        });
+      };
+      collect(cacheEmergency);
+      collect(cacheShelter);
+      if(features.length){
+        const bounds=computeFeatureBounds(features);
+        const bbox=toBbox(bounds);
+        if(bbox) return bbox;
+      }
+      const viewBbox=getViewBbox();
+      if(viewBbox) return viewBbox;
+      return DEFAULT_JAPAN_BBOX.slice();
+    }
+    function fitToFeatures(features){
+      const bounds=computeFeatureBounds(features);
+      if(bounds && bounds[0] && bounds[1] && map?.fitBounds){
+        map.fitBounds(bounds,{padding:40,maxZoom:13});
+      }
+    return bounds;
   }
   function cloneScope(src){
     return { mode:src.mode, prefs:[...src.prefs], munis:[...src.munis] };
@@ -1960,10 +2282,10 @@ function updateLayerVisibility(){
     return layerScopeOverrides[layer] ? cloneScope(layerScopeOverrides[layer]) : cloneScope(layerScopeGlobal);
   }
   function filterByScope(scope, feature){
+    if(!COL_MUNI) return true;
     const fullName = String(feature.properties?.[COL_MUNI]||'');
     if(scope.mode==='all') return true;
-    const pref = PREFS.find(p=>fullName.startsWith(p))||'';
-    const city = fullName.slice(pref.length).trim();
+    const {pref,city}=splitPrefCityLabel(fullName);
     if(scope.mode==='pref'){
       if(scope.prefs.length===0) return true;
       return scope.prefs.includes(pref);
@@ -1980,24 +2302,379 @@ function updateLayerVisibility(){
     props.__label__ = labelField ? String(props[labelField]??'') : '';
     return {...f,properties:props};
   }
-  function refreshLayers(showToast=false){
-    if(!cacheEmergency||!cacheShelter) return;
-    const scopeE = getScopeFor('emergency');
-    const scopeS = getScopeFor('shelter');
-    const emgFiltered=(cacheEmergency||[]).filter(f=>filterByScope(scopeE,f)).map(f=>decorateFeature(f,layerLabelFields.emergency));
-    const shlFiltered=(cacheShelter  ||[]).filter(f=>filterByScope(scopeS,f)).map(f=>decorateFeature(f,layerLabelFields.shelter));
-    map.getSource('emergency').setData({type:'FeatureCollection',features:emgFiltered});
-    map.getSource('shelter').setData({type:'FeatureCollection',features:shlFiltered});
-    updateLayerVisibility();
-    fitToData();
-    if(showToast) toast('表示範囲を更新しました');
+  const EMPTY_FC={type:'FeatureCollection',features:[]};
+  function normalizeScope(scope){
+    const mode=scope?.mode||'all';
+    const prefs=Array.isArray(scope?.prefs)?Array.from(new Set(scope.prefs.filter(Boolean))).sort((a,b)=>a.localeCompare(b,'ja')):[];
+    const rawMunis=Array.isArray(scope?.munis)?scope.munis.filter(Boolean):[];
+    const muniMap=new Map();
+    rawMunis.forEach(label=>{
+      const canonical=canonicalMuniLabel(label);
+      if(!canonical || muniMap.has(canonical)) return;
+      const entry=getMunicipalEntry(label);
+      muniMap.set(canonical,{ label:canonical, pref:entry.pref, city:entry.city, code:entry.code||'' });
+    });
+    const muniEntries=Array.from(muniMap.values()).sort((a,b)=>a.label.localeCompare(b.label,'ja'));
+    const munis=muniEntries.map(entry=>entry.label);
+    const prefSet=new Set(prefs);
+    muniEntries.forEach(entry=>{ if(entry.pref) prefSet.add(entry.pref); });
+    const prefNames=Array.from(prefSet).sort((a,b)=>a.localeCompare(b,'ja'));
+    const prefCodes=prefNames.map(name=>PREF_CODE_MAP[name]).filter(Boolean);
+    const prefCodeNums=prefCodes.map(code=>Number(code)).filter(num=>Number.isFinite(num));
+    const muniNames=Array.from(new Set(muniEntries.map(entry=>entry.city).filter(Boolean))).sort((a,b)=>a.localeCompare(b,'ja'));
+    const muniCodes=Array.from(new Set(muniEntries.map(entry=>entry.code).filter(Boolean)));
+    const muniCodeNums=Array.from(new Set(muniEntries.map(entry=>{
+      const digits=entry.code && entry.code.trim?entry.code.trim():entry.code;
+      const num=Number(digits);
+      return Number.isFinite(num)?num:null;
+    }).filter(num=>num!==null)));
+    const municipalities=muniEntries.map(entry=>({ pref:entry.pref, city:entry.city, code:entry.code||'' }));
+    return { mode, prefs, munis, prefNames, prefCodes, prefCodeNums, muniNames, muniCodes, muniCodeNums, municipalities };
+  }
+  function scopeKey(scope){
+    return JSON.stringify(normalizeScope(scope));
+  }
+
+  function applyMedicalData(fc,{updateStatus=false}={}){
+    if(!map.getSource(MEDICAL_SOURCE_ID)){
+      lastMedicalFeatures=[];
+      return [];
+    }
+    const feats=Array.isArray(fc?.features)?fc.features:[];
+    const cols=new Set(layerColumns.medical);
+    feats.forEach(f=>Object.keys(f?.properties||{}).forEach(k=>cols.add(k)));
+    layerColumns.medical=Array.from(cols).sort((a,b)=>a.localeCompare(b,'ja'));
+    if(layerLabelFields.medical && !layerColumns.medical.includes(layerLabelFields.medical)){
+      layerLabelFields.medical=null;
+    }
+    if(!layerLabelFields.medical && layerColumns.medical.includes(DEFAULT_MED_LABEL)){
+      layerLabelFields.medical=DEFAULT_MED_LABEL;
+    }
+    const labelField=layerLabelFields.medical;
+    const decorated=feats.map(f=>decorateFeature(f,labelField));
+    lastMedicalFeatures=decorated;
+    map.getSource(MEDICAL_SOURCE_ID).setData({type:'FeatureCollection',features:decorated});
+    if(updateStatus){
+      const count=feats.length||0;
+      setMedicalStatus(`表示件数: ${count.toLocaleString()}件`);
+    }
+    return decorated;
+  }
+
+  const toFiniteNumber=(value)=>{
+    if(typeof value==='number') return Number.isFinite(value)?value:NaN;
+    if(typeof value==='string'){
+      const trimmed=value.trim();
+      if(!trimmed) return NaN;
+      const num=Number(trimmed);
+      return Number.isFinite(num)?num:NaN;
+    }
+    return NaN;
+  };
+  const normalizeMedicalCoordinate=(coords)=>{
+    if(!Array.isArray(coords) || coords.length<2) return null;
+    const lon=toFiniteNumber(coords[0]);
+    const lat=toFiniteNumber(coords[1]);
+    if(!Number.isFinite(lon) || !Number.isFinite(lat)) return null;
+    return [lon,lat];
+  };
+  const normalizeMedicalFeature=(feature)=>{
+    if(!feature || typeof feature!=='object') return null;
+    const geom=feature.geometry;
+    if(!geom) return null;
+    if(geom.type==='Point'){
+      const coords=normalizeMedicalCoordinate(geom.coordinates);
+      if(!coords) return null;
+      const props=(feature.properties && typeof feature.properties==='object' && !Array.isArray(feature.properties))?feature.properties:{};
+      return {...feature,geometry:{type:'Point',coordinates:coords},properties:props};
+    }
+    if(geom.type==='MultiPoint'){
+      const list=Array.isArray(geom.coordinates)?geom.coordinates:[];
+      for(const item of list){
+        const coords=normalizeMedicalCoordinate(item);
+        if(coords){
+          const props=(feature.properties && typeof feature.properties==='object' && !Array.isArray(feature.properties))?feature.properties:{};
+          return {...feature,geometry:{type:'Point',coordinates:coords},properties:props};
+        }
+      }
+    }
+    return null;
+  };
+  function normalizeMedicalResponse(data){
+    let fc=null;
+    if(data?.type==='FeatureCollection') fc=data;
+    else if(data?.data?.type==='FeatureCollection') fc=data.data;
+    else if(Array.isArray(data?.features)) fc={type:'FeatureCollection',features:data.features};
+    else if(Array.isArray(data)) fc={type:'FeatureCollection',features:data};
+    if(!fc) fc={...EMPTY_FC};
+    const features=Array.isArray(fc.features)?fc.features:[];
+    const normalized=[];
+    features.forEach(feat=>{
+      const norm=normalizeMedicalFeature(feat);
+      if(norm) normalized.push(norm);
+    });
+    return {type:'FeatureCollection',features:normalized};
+  }
+
+  async function fetchMedicalData(scope,key){
+    if(!MED_PROXY) return EMPTY_FC;
+    if(medicalAbortController){
+      medicalAbortController.abort();
+    }
+    const controller=new AbortController();
+    medicalAbortController=controller;
+    try{
+      const normalizedScope=normalizeScope(scope);
+        const bbox=deriveScopeBbox(normalizedScope);
+        const payload={
+          scope:normalizedScope,
+          scopeKey:key||JSON.stringify(normalizedScope),
+          requestedAt:new Date().toISOString(),
+          source:'phnfield-collab',
+          bbox
+        };
+      Object.assign(payload,normalizedScope);
+      if(controller.signal.aborted){
+        throw new DOMException('Aborted','AbortError');
+      }
+      setMedicalStatus('読込中…',{loading:true});
+      const tryInvoke=async()=>{
+        if(!window.__supa?.functions?.invoke) return null;
+        if(controller.signal.aborted){
+          throw new DOMException('Aborted','AbortError');
+        }
+        const { data, error } = await window.__supa.functions.invoke('medical-proxy',{ body: payload });
+        if(controller.signal.aborted){
+          throw new DOMException('Aborted','AbortError');
+        }
+        if(error){
+          const err=error instanceof Error?error:new Error(error?.message||'Invoke failed');
+          err.__fromInvoke=true;
+          throw err;
+        }
+        return normalizeMedicalResponse(data);
+      };
+      const tryFetch=async(headers)=>{
+        if(controller.signal.aborted){
+          throw new DOMException('Aborted','AbortError');
+        }
+        const resp=await fetch(MED_PROXY,{
+          method:'POST',
+          headers,
+          body:JSON.stringify(payload),
+          signal:controller.signal,
+          mode:'cors',
+          credentials:'omit',
+          cache:'no-store',
+          referrerPolicy:'no-referrer'
+        });
+        if(resp.status===204){
+          return EMPTY_FC;
+        }
+        if(!resp.ok){
+          const text=await resp.text().catch(()=>resp.statusText);
+          const err=new Error(`${resp.status} ${text||resp.statusText}`.trim());
+          err.status=resp.status;
+          throw err;
+        }
+        const rawBody=await resp.text().catch(()=> '');
+        const trimmed=rawBody.trim();
+        if(!trimmed){
+          return normalizeMedicalResponse(null);
+        }
+        try{
+          const parsed=JSON.parse(trimmed);
+          return normalizeMedicalResponse(parsed);
+        }catch(parseErr){
+          const snippet=trimmed.slice(0,2000);
+          console.warn('[medical] invalid JSON response', parseErr, snippet);
+          const err=new Error('医療機関データの形式が不正です');
+          err.status=resp.status;
+          err.code='INVALID_MEDICAL_JSON';
+          err.responseText=snippet;
+          throw err;
+        }
+      };
+
+      let fc=null;
+      if(window.__supa?.functions?.invoke){
+        try{
+          fc=await tryInvoke();
+        }catch(err){
+          if(err.name==='AbortError') throw err;
+          console.warn('[medical] invoke failed ->', err);
+        }
+      }
+      if(!fc){
+        const headers={'Content-Type':'application/json','Accept':'application/json','X-Client-Info':'phnfield-collab-medical-layer/1.0'};
+        if(SUPABASE_ANON){
+          headers.apikey=SUPABASE_ANON;
+        }
+        let bearerToken=null;
+        if(window.__supa?.auth?.getSession){
+          bearerToken=await resolveSupabaseAccessToken();
+        }
+        let authHeader=null;
+        if(bearerToken){
+          authHeader=`Bearer ${bearerToken}`;
+        }else if(SUPABASE_ANON){
+          authHeader=`Bearer ${SUPABASE_ANON}`;
+        }
+        if(authHeader){
+          headers.Authorization=authHeader;
+        }
+        try{
+          fc=await tryFetch(headers);
+        }catch(err){
+          if(err.name==='AbortError') throw err;
+          const statusCode=err.status||0;
+          const hadAuth=!!headers.Authorization;
+          if(hadAuth && (statusCode===401 || statusCode===403 || err.name==='TypeError')){
+            console.warn('[medical] retrying medical proxy fetch without Authorization header');
+            delete headers.Authorization;
+            try{
+              fc=await tryFetch(headers);
+            }catch(innerErr){
+              if(innerErr.name==='AbortError') throw innerErr;
+              throw innerErr;
+            }
+          }else{
+            throw err;
+          }
+        }
+      }
+      if(!fc){
+        fc={...EMPTY_FC};
+      }
+      medicalCache.set(key,fc);
+      return fc;
+    }catch(err){
+      if(err.name==='AbortError'){
+        return null;
+      }
+      console.warn('[medical] fetch failed ->', err);
+      if(err.code==='INVALID_MEDICAL_JSON'){
+        setMedicalStatus('医療機関データの形式が不正です',{error:true});
+        return null;
+      }
+      const msg=String(err.message||'');
+      if(msg.includes('401')||msg.includes('403')){
+        setMedicalStatus('医療機関データへのアクセスが拒否されました',{error:true});
+        return null;
+      }else{
+        if(err.name==='TypeError'){
+          setMedicalStatus('通信エラー：医療機関データを取得できません',{error:true});
+        }else{
+          setMedicalStatus('読込に失敗しました',{error:true});
+        }
+      }
+      return null;
+    }finally{
+      if(medicalAbortController===controller){
+        medicalAbortController=null;
+      }
+    }
+  }
+
+  async function refreshMedicalLayer(){
+    if(!map.getSource(MEDICAL_SOURCE_ID)){
+      lastMedicalFeatures=[];
+      return [];
+    }
+    const scope=getScopeFor('medical');
+    const key=scopeKey(scope);
+    const shouldLoad=$('chkMedical')?.checked;
+    if(!shouldLoad){
+      if(medicalAbortController){
+        medicalAbortController.abort();
+      }
+      setMedicalStatus('');
+      lastMedicalFeatures=[];
+      map.getSource(MEDICAL_SOURCE_ID).setData(EMPTY_FC);
+      return [];
+    }
+    let fc=medicalCache.get(key);
+    const needsFetch=!fc || currentMedicalKey!==key;
+    if(needsFetch){
+      fc=await fetchMedicalData(scope,key);
+      if(fc===null){
+        if(!medicalCache.has(key)){
+          lastMedicalFeatures=[];
+        }
+        return [];
+      }
+      currentMedicalKey=key;
+    }
+    const decorated=applyMedicalData(fc,{updateStatus:true});
+    return Array.isArray(decorated)?decorated:[];
+  }
+
+  async function refreshLayers(showToast=false){
+    try{
+      const featuresForFit=[];
+      if(cacheEmergency && map.getSource('emergency')){
+        const scopeE=getScopeFor('emergency');
+        const emgFiltered=(cacheEmergency||[]).filter(f=>filterByScope(scopeE,f)).map(f=>decorateFeature(f,layerLabelFields.emergency));
+        map.getSource('emergency').setData({type:'FeatureCollection',features:emgFiltered});
+        if(emgFiltered.length) featuresForFit.push(...emgFiltered);
+      }
+      if(cacheShelter && map.getSource('shelter')){
+        const scopeS=getScopeFor('shelter');
+        const shlFiltered=(cacheShelter||[]).filter(f=>filterByScope(scopeS,f)).map(f=>decorateFeature(f,layerLabelFields.shelter));
+        map.getSource('shelter').setData({type:'FeatureCollection',features:shlFiltered});
+        if(shlFiltered.length) featuresForFit.push(...shlFiltered);
+      }
+      const medicalFeatures=await refreshMedicalLayer();
+      if(Array.isArray(medicalFeatures) && medicalFeatures.length){
+        featuresForFit.push(...medicalFeatures);
+      }
+      updateLayerVisibility();
+      const bounds=fitToFeatures(featuresForFit);
+      if(showToast) toast('表示範囲を更新しました');
+      return bounds;
+    }catch(err){
+      console.error('refreshLayers',err);
+      toast('レイヤーの更新に失敗: '+err.message,true);
+      return null;
+    }
+  }
+
+  if(window.__supa?.auth?.onAuthStateChange){
+    window.__supa.auth.onAuthStateChange((event,session)=>{
+      const token=session?.access_token || null;
+      if(!token || event==='SIGNED_OUT'){
+        medicalCache.clear();
+        currentMedicalKey=null;
+        layerColumns.medical=[];
+        layerLabelFields.medical=DEFAULT_MED_LABEL;
+        lastMedicalFeatures=[];
+        if(map && map.getSource && map.getSource(MEDICAL_SOURCE_ID)){
+          map.getSource(MEDICAL_SOURCE_ID).setData(EMPTY_FC);
+        }
+        if($('chkMedical')?.checked){
+          refreshMedicalLayer();
+        }else{
+          setMedicalStatus('');
+        }
+      }else if(token && (event==='SIGNED_IN' || event==='TOKEN_REFRESHED' || event==='USER_UPDATED')){
+        medicalCache.clear();
+        currentMedicalKey=null;
+        lastMedicalFeatures=[];
+        if($('chkMedical')?.checked){
+          refreshMedicalLayer();
+        }
+      }
+    });
   }
 
   function hideSuggest(){ $('suggest').style.display='none'; $('suggest').innerHTML=''; }
   function updateSuggest(query){
     const q=String(query||'').trim();
     const chosenPrefs=new Set(Array.from($('prefSelect').selectedOptions).map(o=>o.value));
-    const src=(chosenPrefs.size===0)?window.__allMunicipalLabels:window.__allMunicipalLabels.filter(lbl=>chosenPrefs.has(lbl.split(" ")[0]));
+    const src=(chosenPrefs.size===0)?window.__allMunicipalLabels:window.__allMunicipalLabels.filter(lbl=>{
+      const {pref}=splitPrefCityLabel(lbl);
+      return pref?chosenPrefs.has(pref):false;
+    });
     if(!q){hideSuggest();return;}
     const hits=src.filter(lbl=>lbl.includes(q)).slice(0,5);
     if(hits.length===0){hideSuggest();return;}
@@ -2019,11 +2696,14 @@ function updateLayerVisibility(){
     if(!map.getSource('shelter'))   map.addSource('shelter',  {type:'geojson',data:{type:'FeatureCollection',features:[]}});
     if(!map.getLayer('emg-circle')) map.addLayer({id:'emg-circle',type:'circle',source:'emergency',layout:{ visibility:'none' },paint:{'circle-radius':5,'circle-color':'#e23b3b','circle-stroke-color':'#fff','circle-stroke-width':1}});
     if(!map.getLayer('shel-circle')) map.addLayer({id:'shel-circle',type:'circle',source:'shelter',layout:{ visibility:'none' },paint:{'circle-radius':5,'circle-color':'#2a7be4','circle-stroke-color':'#fff','circle-stroke-width':1}});
+    if(!map.getSource(MEDICAL_SOURCE_ID)) map.addSource(MEDICAL_SOURCE_ID,{type:'geojson',data:{type:'FeatureCollection',features:[]}});
     if(!map.getLayer('emg-label'))   map.addLayer({id:'emg-label',type:'symbol',source:'emergency',layout:{ visibility:'none','text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top'},paint:{'text-halo-width':1.2,'text-halo-color':'#fff'}
 });
     if(!map.getLayer('shel-label'))  map.addLayer({id:'shel-label',type:'symbol',source:'shelter',  layout:{ visibility:'none','text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top'},paint:{'text-halo-width':1.2,'text-halo-color':'#fff'}});
-    bindClickPopup('emg-circle'); bindClickPopup('shel-circle');
-      ['chkEmergency','chkShelter'].forEach(id=>$(id).addEventListener('change',updateLayerVisibility));
+    if(!map.getLayer(MEDICAL_LAYER_POINT)) map.addLayer({id:MEDICAL_LAYER_POINT,type:'circle',source:MEDICAL_SOURCE_ID,layout:{ visibility:'none' },paint:{'circle-radius':5,'circle-color':'#0f766e','circle-stroke-color':'#fff','circle-stroke-width':1}});
+    if(!map.getLayer(MEDICAL_LAYER_LABEL)) map.addLayer({id:MEDICAL_LAYER_LABEL,type:'symbol',source:MEDICAL_SOURCE_ID,layout:{ visibility:'none','text-field':['get','__label__'],'text-size':12,'text-offset':[0,1.2],'text-anchor':'top','text-allow-overlap':false},paint:{'text-halo-width':1.2,'text-halo-color':'#fff','text-color':'#0f172a'}});
+    bindClickPopup('emg-circle'); bindClickPopup('shel-circle'); bindClickPopup(MEDICAL_LAYER_POINT);
+      ['chkEmergency','chkShelter','chkMedical'].forEach(id=>$(id)?.addEventListener('change',()=>{ refreshLayers(); }));
 
       document.querySelectorAll('input[name="areaMode"]').forEach(r=>{
         r.addEventListener('change',()=>{
@@ -2051,7 +2731,7 @@ function updateLayerVisibility(){
       }
       function openExtentPanel(target){
         currentScopeTarget=target;
-        const note = target==='global' ? '(全レイヤ)' : (target==='emergency'?'(緊急避難場所)':'(避難所)');
+        const note = SCOPE_LABELS[target] || SCOPE_LABELS.global;
         $('extentScopeNote').textContent=note;
         const scope = target==='global' ? layerScopeGlobal : (layerScopeOverrides[target] || layerScopeGlobal);
         loadScopeToUI(scope);
@@ -2064,11 +2744,32 @@ function updateLayerVisibility(){
         btn.addEventListener('click',()=>openExtentPanel(btn.dataset.layer));
       });
       $('btnExtentCancel').onclick=()=>{ extentPanel.style.display='none'; };
-      $('btnExtentConfirm').onclick=()=>{
+      $('btnExtentConfirm').onclick=async()=>{
         const scope=readScopeFromUI();
         if(currentScopeTarget==='global') layerScopeGlobal=scope; else layerScopeOverrides[currentScopeTarget]=scope;
         extentPanel.style.display='none';
-        refreshLayers(true);
+        const bounds=await refreshLayers(true);
+        if(!bounds){
+          const fallbackFeatures=[];
+          if(cacheEmergency){
+            const scopeE=getScopeFor('emergency');
+            fallbackFeatures.push(...(cacheEmergency||[]).filter(f=>filterByScope(scopeE,f)));
+          }
+          if(cacheShelter){
+            const scopeS=getScopeFor('shelter');
+            fallbackFeatures.push(...(cacheShelter||[]).filter(f=>filterByScope(scopeS,f)));
+          }
+          if(Array.isArray(lastMedicalFeatures) && lastMedicalFeatures.length){
+            const effectiveMedicalScope=getScopeFor('medical');
+            const effectiveKey=scopeKey(effectiveMedicalScope);
+            if(currentMedicalKey===effectiveKey){
+              fallbackFeatures.push(...lastMedicalFeatures);
+            }
+          }
+          if(fallbackFeatures.length){
+            fitToFeatures(fallbackFeatures);
+          }
+        }
       };
 
       (function(){
@@ -2099,7 +2800,7 @@ function updateLayerVisibility(){
       function openLabelPanel(layer){
         if(!layerColumns[layer] || layerColumns[layer].length===0){ toast('データ読み込み後に利用できます',true); return; }
         currentLabelTarget=layer;
-        $('labelScopeNote').textContent = layer==='emergency' ? '(緊急避難場所)' : '(避難所)';
+        $('labelScopeNote').textContent = SCOPE_LABELS[layer] || '';
         labelList.innerHTML='';
         const cols=['__none__', ...layerColumns[layer]];
         cols.forEach(col=>{
@@ -2159,6 +2860,8 @@ function updateLayerVisibility(){
         COL_MUNI=MUNI_COL_CANDIDATES.find(k=>propKeys.has(k))||null;
         if(!COL_MUNI) showErr('「都道府県名及び市町村名」列が見つかりません（COL_MUNI未設定）');
 
+        buildMunicipalIndex([...emgFeats,...shelFeats],COL_MUNI);
+
         // ラベル候補
         const emCols=new Set();
         emgFeats.forEach(f=>Object.keys(f.properties||{}).forEach(k=>emCols.add(k)));
@@ -2171,13 +2874,15 @@ function updateLayerVisibility(){
 
       // 市区町村候補
       const uniq=a=>[...new Set(a)];
-      const names=uniq([...emgFeats,...shelFeats].map(f=>String(f.properties?.[COL_MUNI]||"").trim()).filter(Boolean));
-      function splitPrefCity(full){const pref=PREFS.find(p=>full.startsWith(p))||"";return {pref,city:full.slice(pref.length).trim()||full};}
-      window.__allMunicipalLabels=names.map(n=>{const {pref,city}=splitPrefCity(n);return pref?`${pref} ${city||"(名称不明)"}`:n;}).sort((a,b)=>a.localeCompare(b,'ja'));
+      const names=uniq([...emgFeats,...shelFeats].map(f=>canonicalMuniLabel(f.properties?.[COL_MUNI]||"")).filter(Boolean));
+      window.__allMunicipalLabels=names.map(n=>{const {pref,city}=splitPrefCityLabel(n);return pref?`${pref} ${city||"(名称不明)"}`:n;}).sort((a,b)=>a.localeCompare(b,'ja'));
       function renderMuniOptions(){
         const chosenPrefs=new Set(Array.from($('prefSelect').selectedOptions).map(o=>o.value));
         $('muniSelect').innerHTML="";
-        const list=(chosenPrefs.size===0)?window.__allMunicipalLabels:window.__allMunicipalLabels.filter(lbl=>chosenPrefs.has(lbl.split(" ")[0]));
+        const list=(chosenPrefs.size===0)?window.__allMunicipalLabels:window.__allMunicipalLabels.filter(lbl=>{
+          const {pref}=splitPrefCityLabel(lbl);
+          return pref?chosenPrefs.has(pref):false;
+        });
         list.forEach(lbl=>{const o=document.createElement('option');o.value=lbl;o.textContent=lbl;$('muniSelect').appendChild(o);});
         updateSuggest($('qMuni').value);
       }
@@ -2414,11 +3119,22 @@ const objToolbarBtn=document.getElementById('btnObj');
 const objSubtools=document.getElementById('objSubtools');
 const objToolbar=document.getElementById('objToolbar');
 let lastObjSubtoolsTop=null;
+const FALLBACK_MEDIA_QUERY=(typeof window!=='undefined' && window.__fallbackMobilePanelQuery) || {
+  matches:false,
+  addEventListener:()=>{},
+  removeEventListener:()=>{},
+  addListener:()=>{},
+  removeListener:()=>{}
+};
+const panelMediaQuery=(typeof mobilePanelQuery!=='undefined' && mobilePanelQuery)
+  || (typeof window!=='undefined' && window.__mobilePanelQuery)
+  || (typeof window!=='undefined' && typeof window.matchMedia==='function' && window.matchMedia('(max-width: 1024px)'))
+  || FALLBACK_MEDIA_QUERY;
 function updateObjSubtoolsLayout({force=false}={}){
   if(!objSubtools) return;
   const isOpen=objSubtools.style.display==='flex';
-  if(!isOpen || !mobilePanelQuery.matches){
-    if(force || !mobilePanelQuery.matches){
+  if(!isOpen || !panelMediaQuery.matches){
+    if(force || !panelMediaQuery.matches){
       objSubtools.classList.remove('mobile-subtools');
       objSubtools.style.removeProperty('--obj-subtools-top');
       lastObjSubtoolsTop=null;
@@ -2443,28 +3159,27 @@ const syncObjToolbar=open=>{
   if(!objToolbarBtn || !objSubtools) return;
   if(open){
     objSubtools.style.display='flex';
-    if(mobilePanelQuery.matches){
+    if(panelMediaQuery.matches){
       objSubtools.classList.add('mobile-floating');
       objSubtools.style.marginLeft='0';
       if(typeof objToolbarBtn.scrollIntoView==='function'){
         objToolbarBtn.scrollIntoView({ behavior:'smooth', block:'nearest', inline:'center' });
       }
-      positionObjSubtools();
     }else{
       objSubtools.classList.remove('mobile-floating');
       objSubtools.style.marginLeft='8px';
-      objSubtools.style.removeProperty('--obj-subtool-top');
+      objSubtools.style.removeProperty('--obj-subtools-top');
     }
   }else{
     objSubtools.style.display='none';
     objSubtools.classList.remove('mobile-floating');
-    objSubtools.style.removeProperty('--obj-subtool-top');
-    objSubtools.style.marginLeft=mobilePanelQuery.matches?'0':'8px';
+    objSubtools.style.removeProperty('--obj-subtools-top');
+    objSubtools.style.marginLeft=panelMediaQuery.matches?'0':'8px';
   }
   objToolbarBtn.classList.toggle('toggle-on', !!open);
   objToolbar?.classList.toggle('is-open', !!open);
   if(open){
-    if(mobilePanelQuery.matches && typeof objToolbarBtn.scrollIntoView==='function'){
+    if(panelMediaQuery.matches && typeof objToolbarBtn.scrollIntoView==='function'){
       objToolbarBtn.scrollIntoView({ behavior:'smooth', block:'nearest', inline:'center' });
     }
     updateObjSubtoolsLayout({force:true});
@@ -2478,10 +3193,10 @@ const handleResponsiveLayoutChange=()=>{
   updateObjSubtoolsLayout({force:true});
   positionSurveyPanel({force:true});
 };
-if(typeof mobilePanelQuery.addEventListener==='function'){
-  mobilePanelQuery.addEventListener('change', handleResponsiveLayoutChange);
-}else if(typeof mobilePanelQuery.addListener==='function'){
-  mobilePanelQuery.addListener(handleResponsiveLayoutChange);
+if(typeof panelMediaQuery.addEventListener==='function'){
+  panelMediaQuery.addEventListener('change', handleResponsiveLayoutChange);
+}else if(typeof panelMediaQuery.addListener==='function'){
+  panelMediaQuery.addListener(handleResponsiveLayoutChange);
 }
 const handleViewportChange=()=>{
   updateObjSubtoolsLayout({force:true});
