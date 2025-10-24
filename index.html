@@ -537,6 +537,18 @@ input[type="number"]{ width:70px; }
     </div>
 
     <div class="group">
+      <div>医療機関（API）:</div>
+      <div class="layerRow">
+        <label><input type="checkbox" id="chkMedical"> 医療機関</label>
+        <div class="layerActions">
+          <button class="miniBtn" data-layer="medical" data-action="scope">表示範囲</button>
+          <button class="miniBtn" data-layer="medical" data-action="label">ラベル</button>
+        </div>
+      </div>
+      <div id="medicalStatus" class="small" style="margin-left:26px;display:none;color:#64748b"></div>
+    </div>
+
+    <div class="group">
       <div>避難施設（FGB）:</div>
       <div class="layerRow">
         <label><input type="checkbox" id="chkEmergency"> 指定<strong>緊急避難場所</strong>（赤）</label>
@@ -1452,10 +1464,24 @@ $('basemapSel').addEventListener('change', ()=>{
 });
 
   /*************** Draw（ポイント/ライン/ポリゴン + 円ツール） ***************/
-const draw = new MapboxDraw({
-  displayControlsDefault:false,
-  controls:{} // ← すべてUI非表示
-});
+const DRAW_STUB_FC={type:'FeatureCollection',features:[]};
+function createDrawInstance(){
+  if(window.MapboxDraw && typeof window.MapboxDraw==='function'){
+    try{
+      return new window.MapboxDraw({ displayControlsDefault:false, controls:{} });
+    }catch(err){
+      console.error('MapboxDraw init failed', err);
+    }
+  }
+  console.warn('MapboxDraw is not available. Object editing toolbar is disabled.');
+  return {
+    add:()=>DRAW_STUB_FC,
+    deleteAll:()=>{},
+    getAll:()=>DRAW_STUB_FC
+  };
+}
+const draw = createDrawInstance();
+window.draw = draw;
 // map.addControl(draw,'top-right'); ← 追加しない
 
   /*************** ハザード（洪水=1、土砂=3まとめ） ***************/
