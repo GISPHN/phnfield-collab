@@ -525,6 +525,18 @@ input[type="number"]{ width:70px; }
     </div>
 
     <div class="group">
+      <div>医療機関（API）:</div>
+      <div class="layerRow">
+        <label><input type="checkbox" id="chkMedical"> 医療機関</label>
+        <div class="layerActions">
+          <button class="miniBtn" data-layer="medical" data-action="scope">表示範囲</button>
+          <button class="miniBtn" data-layer="medical" data-action="label">ラベル</button>
+        </div>
+      </div>
+      <div id="medicalStatus" class="small" style="margin-left:26px;display:none;color:#64748b"></div>
+    </div>
+
+    <div class="group">
       <div>避難施設（FGB）:</div>
       <div class="layerRow">
         <label><input type="checkbox" id="chkEmergency"> 指定<strong>緊急避難場所</strong>（赤）</label>
@@ -1297,14 +1309,6 @@ const map = new maplibregl.Map({
     center:[139.767,35.681], zoom:5.2
   });
   window.map = map;
-    layers:[
-      { id:'hillshade', type:'raster', source:'hillshade', paint:{ 'raster-opacity': 1.0 } },
-      { id:'base',      type:'raster', source:'base',      paint:{ 'raster-opacity': BASE_OPACITY } }
-    ]
-  },
-  center:[139.767,35.681], zoom:5.2
-});
-window.map = map;
 // 縮尺バー
 map.addControl(new maplibregl.ScaleControl({maxWidth:140, unit:'metric'}), 'bottom-left');
 
@@ -2346,8 +2350,8 @@ if (map.getLayer(MEDICAL_LAYER_LABEL)) map.setLayoutProperty(MEDICAL_LAYER_LABEL
   if(map.getLayer(MEDICAL_LAYER_LABEL)) map.setLayoutProperty(MEDICAL_LAYER_LABEL,'visibility', mvLabel||'none');
 }
 
-  function computeFeatureBounds(features){
-    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    function computeFeatureBounds(features){
+      let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
     (features||[]).forEach(f=>{
       const geom=f?.geometry;
       if(!geom || geom.type!=='Point') return;
@@ -2364,12 +2368,81 @@ if (map.getLayer(MEDICAL_LAYER_LABEL)) map.setLayoutProperty(MEDICAL_LAYER_LABEL
     if(minX===Infinity || minY===Infinity || maxX===-Infinity || maxY===-Infinity) return null;
     if(minX===maxX && minY===maxY) return [[minX,minY],[maxX,maxY]];
     return [[minX,minY],[maxX,maxY]];
-  }
-  function fitToFeatures(features){
-    const bounds=computeFeatureBounds(features);
-    if(bounds && bounds[0] && bounds[1] && map?.fitBounds){
-      map.fitBounds(bounds,{padding:40,maxZoom:13});
     }
+    function toBbox(bounds){
+      if(!bounds) return null;
+      if(Array.isArray(bounds) && bounds.length===2){
+        const sw=bounds[0], ne=bounds[1];
+        if(Array.isArray(sw) && sw.length>=2 && Array.isArray(ne) && ne.length>=2){
+          const [minX,minY]=sw;
+          const [maxX,maxY]=ne;
+          if([minX,minY,maxX,maxY].every(v=>Number.isFinite(v))){
+            return [minX,minY,maxX,maxY];
+          }
+        }
+      }
+      if(bounds && typeof bounds.getSouthWest==='function' && typeof bounds.getNorthEast==='function'){
+        const sw=bounds.getSouthWest();
+        const ne=bounds.getNorthEast();
+        const minX=Number(sw?.lng ?? sw?.lon ?? sw?.x);
+        const minY=Number(sw?.lat ?? sw?.y);
+        const maxX=Number(ne?.lng ?? ne?.lon ?? ne?.x);
+        const maxY=Number(ne?.lat ?? ne?.y);
+        if([minX,minY,maxX,maxY].every(v=>Number.isFinite(v))){
+          return [minX,minY,maxX,maxY];
+        }
+      }
+      if(bounds && typeof bounds._sw==='object' && typeof bounds._ne==='object'){
+        const sw=bounds._sw;
+        const ne=bounds._ne;
+        const minX=Number(sw?.lng ?? sw?.lon ?? sw?.x);
+        const minY=Number(sw?.lat ?? sw?.y);
+        const maxX=Number(ne?.lng ?? ne?.lon ?? ne?.x);
+        const maxY=Number(ne?.lat ?? ne?.y);
+        if([minX,minY,maxX,maxY].every(v=>Number.isFinite(v))){
+          return [minX,minY,maxX,maxY];
+        }
+      }
+      return null;
+    }
+    const DEFAULT_JAPAN_BBOX=[122.93457,24.04063,153.98667,45.55148];
+    function getViewBbox(){
+      if(typeof map==='undefined' || !map || typeof map.getBounds!=='function') return null;
+      try{
+        return toBbox(map.getBounds());
+      }catch(err){
+        console.warn('getViewBbox', err);
+        return null;
+      }
+    }
+    function deriveScopeBbox(normalizedScope){
+      const features=[];
+      const collect=(list)=>{
+        if(!Array.isArray(list) || !list.length) return;
+        list.forEach(feat=>{
+          try{
+            if(filterByScope(normalizedScope, feat)) features.push(feat);
+          }catch(err){
+            console.warn('deriveScopeBbox/filter', err);
+          }
+        });
+      };
+      collect(cacheEmergency);
+      collect(cacheShelter);
+      if(features.length){
+        const bounds=computeFeatureBounds(features);
+        const bbox=toBbox(bounds);
+        if(bbox) return bbox;
+      }
+      const viewBbox=getViewBbox();
+      if(viewBbox) return viewBbox;
+      return DEFAULT_JAPAN_BBOX.slice();
+    }
+    function fitToFeatures(features){
+      const bounds=computeFeatureBounds(features);
+      if(bounds && bounds[0] && bounds[1] && map?.fitBounds){
+        map.fitBounds(bounds,{padding:40,maxZoom:13});
+      }
     return bounds;
   }
   function cloneScope(src){
@@ -2522,12 +2595,14 @@ if (map.getLayer(MEDICAL_LAYER_LABEL)) map.setLayoutProperty(MEDICAL_LAYER_LABEL
     medicalAbortController=controller;
     try{
       const normalizedScope=normalizeScope(scope);
-      const payload={
-        scope:normalizedScope,
-        scopeKey:key||JSON.stringify(normalizedScope),
-        requestedAt:new Date().toISOString(),
-        source:'phnfield-collab'
-      };
+        const bbox=deriveScopeBbox(normalizedScope);
+        const payload={
+          scope:normalizedScope,
+          scopeKey:key||JSON.stringify(normalizedScope),
+          requestedAt:new Date().toISOString(),
+          source:'phnfield-collab',
+          bbox
+        };
       Object.assign(payload,normalizedScope);
       if(controller.signal.aborted){
         throw new DOMException('Aborted','AbortError');
