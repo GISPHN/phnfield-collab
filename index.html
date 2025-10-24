@@ -259,6 +259,19 @@ input[type="number"]{ width:70px; }
 .miniBtn{padding:4px 8px;border-radius:8px;border:none;background:#f3f4f6;cursor:pointer}
 .miniBtn:hover{background:#e5e7eb}
 
+    .hazLegendLaunch{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
+    .hazLegendLaunch .btn{flex:0 0 auto}
+    .hazLegendLaunch .small{color:#4b5563}
+
+    .hazLegendList{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+    .hazLegendItem{display:flex;align-items:center;gap:10px;font-size:13px;color:#1f2937}
+    .hazLegendSwatch{width:34px;height:18px;border-radius:4px;border:1px solid rgba(15,23,42,.18);flex-shrink:0;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35)}
+    .hazLegendSectionTitle{font-size:13px;font-weight:700;color:#1f2937}
+    .hazLegendNote{font-size:11px;color:#6b7280;margin-top:10px;line-height:1.4}
+    .hazLegendDivider{margin:16px 0;border:none;border-top:1px solid rgba(148,163,184,.35)}
+    .legendClose{margin-left:auto;border:none;background:transparent;color:#1f2937;font-size:18px;line-height:1;cursor:pointer;padding:2px 4px;border-radius:6px}
+    .legendClose:hover{background:rgba(148,163,184,.18)}
+
     .panelToggle{
       position:fixed;
       width:42px;height:42px;
@@ -470,6 +483,38 @@ input[type="number"]{ width:70px; }
     </div>
   </div>
 
+  <div id="hazLegendPanel" class="floating" style="display:none;max-width:320px" aria-hidden="true">
+    <div class="floatHeader">洪水浸水想定凡例
+      <span class="handle" title="ドラッグで移動">⣿</span>
+      <button type="button" class="legendClose" id="btnHazLegendClose" aria-label="凡例を閉じる">×</button>
+    </div>
+    <div class="floatBody">
+      <div class="hazLegendSection">
+        <div class="hazLegendSectionTitle">洪水浸水想定区域（想定最大規模）</div>
+        <ul class="hazLegendList" aria-label="洪水浸水想定の凡例">
+          <li class="hazLegendItem"><span class="hazLegendSwatch" style="background:#7c3aed"></span><span>20m ～</span></li>
+          <li class="hazLegendItem"><span class="hazLegendSwatch" style="background:#c026d3"></span><span>10m ～ 20m</span></li>
+          <li class="hazLegendItem"><span class="hazLegendSwatch" style="background:#ea580c"></span><span>5m ～ 10m</span></li>
+          <li class="hazLegendItem"><span class="hazLegendSwatch" style="background:#f97316"></span><span>3m ～ 5m</span></li>
+          <li class="hazLegendItem"><span class="hazLegendSwatch" style="background:#facc15"></span><span>0.5m ～ 3m</span></li>
+          <li class="hazLegendItem"><span class="hazLegendSwatch" style="background:#fde047"></span><span>0.5m ～ 1m</span></li>
+          <li class="hazLegendItem"><span class="hazLegendSwatch" style="background:#fef08a"></span><span>0.5m 未満</span></li>
+          <li class="hazLegendItem"><span class="hazLegendSwatch" style="background:#fefce8"></span><span>0.3m 未満</span></li>
+        </ul>
+        <div class="hazLegendNote">国土数値情報「洪水浸水想定区域（想定最大規模）」に基づく代表色を使用しています。</div>
+      </div>
+      <hr class="hazLegendDivider"/>
+      <div class="hazLegendSection">
+        <div class="hazLegendSectionTitle">土砂災害警戒区域（参考）</div>
+        <ul class="hazLegendList" aria-label="土砂災害警戒区域の凡例">
+          <li class="hazLegendItem"><span class="hazLegendSwatch" style="background:#ef4444"></span><span>土石流警戒区域</span></li>
+          <li class="hazLegendItem"><span class="hazLegendSwatch" style="background:#f97316"></span><span>急傾斜地の崩壊警戒区域</span></li>
+          <li class="hazLegendItem"><span class="hazLegendSwatch" style="background:#facc15"></span><span>地すべり警戒区域</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
   <button class="panelToggle panelToggle-left" id="panelToggle" aria-label="レイヤ / 背景地図パネルを開閉" aria-controls="panel" aria-expanded="false"></button>
   <button class="panelToggle panelToggle-bottom" id="objectToggle" aria-label="オブジェクト一覧パネルを開閉" aria-controls="objectDrawer" aria-expanded="false"></button>
 
@@ -494,9 +539,10 @@ input[type="number"]{ width:70px; }
         <div id="hazOpacityVal" style="width:36px;text-align:right;font-size:12px">0.60</div>
       </div>
       <div style="font-size:12px;color:#6b7280;margin-top:6px">※ハザードのタイルURLを設定していない場合は無効</div>
-      <div style="font-size:12px;color:#6b7280;margin-top:4px">凡例（例示画像を必要に応じ差替）</div>
-      <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%27280%27%20height%3D%2760%27%3E%0A%20%20%3Crect%20width%3D%27280%27%20height%3D%2760%27%20fill%3D%27%23f0f9ff%27/%3E%0A%20%20%3Ctext%20x%3D%2750%25%27%20y%3D%2750%25%27%20dominant-baseline%3D%27middle%27%20text-anchor%3D%27middle%27%20font-family%3D%27sans-serif%27%20font-size%3D%2716%27%20fill%3D%27%230369a1%27%3E%E5%87%A1%E4%BE%8B%28%E6%B4%AA%E6%B0%B4%29%3C/text%3E%0A%3C/svg%3E" style="max-width:100%;opacity:.85" alt="凡例(洪水)">
-      <img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%27http%3A//www.w3.org/2000/svg%27%20width%3D%27280%27%20height%3D%2760%27%3E%0A%20%20%3Crect%20width%3D%27280%27%20height%3D%2760%27%20fill%3D%27%23fef3c7%27/%3E%0A%20%20%3Ctext%20x%3D%2750%25%27%20y%3D%2750%25%27%20dominant-baseline%3D%27middle%27%20text-anchor%3D%27middle%27%20font-family%3D%27sans-serif%27%20font-size%3D%2716%27%20fill%3D%27%2392400e%27%3E%E5%87%A1%E4%BE%8B%28%E5%9C%9F%E7%A0%82%29%3C/text%3E%0A%3C/svg%3E" style="max-width:100%;opacity:.85" alt="凡例(土砂)">
+      <div class="hazLegendLaunch">
+        <button class="btn secondary" type="button" id="btnHazardLegend">凡例を表示</button>
+        <span class="small" style="margin-left:6px">洪水浸水想定区域の凡例を確認できます</span>
+      </div>
     </div>
 
     <div class="group">
@@ -870,18 +916,29 @@ input[type="number"]{ width:70px; }
   window.__topbarEl = topbarEl;
   window.topbarEl = topbarEl;
 
-  (function ensureSingleMedicalLayerEntry(){
-    const inputs=document.querySelectorAll('#panel input#chkMedical');
-    inputs.forEach((input,idx)=>{
-      if(idx===0) return;
-      const group=input.closest('.group');
-      if(group){
-        group.remove();
-      }else{
-        input.remove();
-      }
-    });
-  })();
+  const hazardLegendPanel=$('hazLegendPanel');
+  const hazardLegendBtn=$('btnHazardLegend');
+  const hazardLegendClose=$('btnHazLegendClose');
+  const hideHazardLegend=()=>{
+    if(!hazardLegendPanel) return;
+    hazardLegendPanel.style.display='none';
+    hazardLegendPanel.setAttribute('aria-hidden','true');
+  };
+  if(hazardLegendPanel){
+    makeDraggable(hazardLegendPanel);
+  }
+  hazardLegendBtn?.addEventListener('click',()=>{
+    if(!hazardLegendPanel) return;
+    centerPanel(hazardLegendPanel);
+    hazardLegendPanel.style.display='block';
+    hazardLegendPanel.setAttribute('aria-hidden','false');
+  });
+  hazardLegendClose?.addEventListener('click', hideHazardLegend);
+  document.addEventListener('keydown',e=>{
+    if(e.key==='Escape' && hazardLegendPanel?.style.display==='block'){
+      hideHazardLegend();
+    }
+  });
 
   (function ensureSingleMedicalLayerEntry(){
     const inputs=document.querySelectorAll('#panel input#chkMedical');
