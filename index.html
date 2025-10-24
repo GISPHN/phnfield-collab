@@ -927,15 +927,19 @@ input[type="number"]{ width:70px; }
   if(hazardLegendPanel){
     makeDraggable(hazardLegendPanel);
   }
-  hazardLegendBtn?.addEventListener('click',()=>{
-    if(!hazardLegendPanel) return;
-    centerPanel(hazardLegendPanel);
-    hazardLegendPanel.style.display='block';
-    hazardLegendPanel.setAttribute('aria-hidden','false');
-  });
-  hazardLegendClose?.addEventListener('click', hideHazardLegend);
+  if(hazardLegendBtn){
+    hazardLegendBtn.addEventListener('click',()=>{
+      if(!hazardLegendPanel) return;
+      centerPanel(hazardLegendPanel);
+      hazardLegendPanel.style.display='block';
+      hazardLegendPanel.setAttribute('aria-hidden','false');
+    });
+  }
+  if(hazardLegendClose){
+    hazardLegendClose.addEventListener('click', hideHazardLegend);
+  }
   document.addEventListener('keydown',e=>{
-    if(e.key==='Escape' && hazardLegendPanel?.style.display==='block'){
+    if(e.key==='Escape' && hazardLegendPanel && hazardLegendPanel.style.display==='block'){
       hideHazardLegend();
     }
   });
@@ -954,27 +958,37 @@ input[type="number"]{ width:70px; }
   })();
 
   const syncPanelToggleState=()=>{
-    if(panelToggleBtn) panelToggleBtn.setAttribute('aria-expanded', layerPanel?.classList.contains('is-open') ? 'true' : 'false');
-    if(objectToggleBtn) objectToggleBtn.setAttribute('aria-expanded', objectDrawer?.classList.contains('is-open') ? 'true' : 'false');
+    if(panelToggleBtn){
+      const panelOpen=layerPanel && layerPanel.classList.contains('is-open');
+      panelToggleBtn.setAttribute('aria-expanded', panelOpen ? 'true' : 'false');
+    }
+    if(objectToggleBtn){
+      const objOpen=objectDrawer && objectDrawer.classList.contains('is-open');
+      objectToggleBtn.setAttribute('aria-expanded', objOpen ? 'true' : 'false');
+    }
   };
 
-  const closeResponsivePanel=(panel)=>{ panel?.classList.remove('is-open'); };
+  const closeResponsivePanel=(panel)=>{ if(panel){ panel.classList.remove('is-open'); } };
 
-  panelToggleBtn?.addEventListener('click',()=>{
-    const willOpen=layerPanel?.classList.toggle('is-open');
-    if(willOpen){
-      closeResponsivePanel(objectDrawer);
-    }
-    syncPanelToggleState();
-  });
+  if(panelToggleBtn){
+    panelToggleBtn.addEventListener('click',()=>{
+      const willOpen=layerPanel ? layerPanel.classList.toggle('is-open') : false;
+      if(willOpen){
+        closeResponsivePanel(objectDrawer);
+      }
+      syncPanelToggleState();
+    });
+  }
 
-  objectToggleBtn?.addEventListener('click',()=>{
-    const willOpen=objectDrawer?.classList.toggle('is-open');
-    if(willOpen){
-      closeResponsivePanel(layerPanel);
-    }
-    syncPanelToggleState();
-  });
+  if(objectToggleBtn){
+    objectToggleBtn.addEventListener('click',()=>{
+      const willOpen=objectDrawer ? objectDrawer.classList.toggle('is-open') : false;
+      if(willOpen){
+        closeResponsivePanel(layerPanel);
+      }
+      syncPanelToggleState();
+    });
+  }
 
   const handleResponsivePanels=()=>{
     if(!mobilePanelQuery.matches){
@@ -998,7 +1012,7 @@ input[type="number"]{ width:70px; }
   const SIMPLE_LABEL_EVENTS=['move','moveend','zoom','rotate','pitch'];
   let simpleLabelContext={ feature:null,isNew:false,resumeMode:null,onApply:null,anchor:null,positionMode:'anchor' };
   function computeSimpleLabelAnchor(feature){
-    if(!feature?.geometry) return null;
+    if(!feature || !feature.geometry) return null;
     const geom=feature.geometry;
     try{
       if(geom.type==='Point' && Array.isArray(geom.coordinates)){
@@ -1048,7 +1062,10 @@ input[type="number"]{ width:70px; }
     detachSimpleLabelPosition();
     simpleLabelContext={ feature, isNew, resumeMode, onApply, anchor:null, positionMode:'anchor' };
     if(simpleLabelTitle) simpleLabelTitle.textContent=title;
-    if(simpleLabelInput) simpleLabelInput.value=feature?.properties?.label||'';
+    if(simpleLabelInput){
+      const props=(feature && feature.properties) ? feature.properties : {};
+      simpleLabelInput.value=props.label || '';
+    }
     simpleLabelContext.anchor=computeSimpleLabelAnchor(feature);
     if(simpleLabelPanel){
       if(simpleLabelContext.anchor){
@@ -1094,9 +1111,22 @@ input[type="number"]{ width:70px; }
     simpleLabelContext={ feature:null,isNew:false,resumeMode:null,onApply:null,anchor:null,positionMode:'anchor' };
     if(typeof updateMapCursor==='function') updateMapCursor();
   }
-  $('simpleLabelConfirm')?.addEventListener('click',()=>closeSimpleLabel(true));
-  $('simpleLabelCancel')?.addEventListener('click',()=>closeSimpleLabel(false));
-  simpleLabelInput?.addEventListener('keydown',ev=>{ if(ev.key==='Enter'){ ev.preventDefault(); closeSimpleLabel(true); } });
+  const simpleLabelConfirmBtn=$('simpleLabelConfirm');
+  if(simpleLabelConfirmBtn){
+    simpleLabelConfirmBtn.addEventListener('click',()=>closeSimpleLabel(true));
+  }
+  const simpleLabelCancelBtn=$('simpleLabelCancel');
+  if(simpleLabelCancelBtn){
+    simpleLabelCancelBtn.addEventListener('click',()=>closeSimpleLabel(false));
+  }
+  if(simpleLabelInput){
+    simpleLabelInput.addEventListener('keydown',ev=>{
+      if(ev.key==='Enter'){
+        ev.preventDefault();
+        closeSimpleLabel(true);
+      }
+    });
+  }
   window.openSimpleLabelEditor=openSimpleLabelEditor;
 
   const STYLE_DEFAULTS={
@@ -1132,22 +1162,23 @@ input[type="number"]{ width:70px; }
   }
 
   function computeLabelCoordinates(feature){
-    if(!feature?.geometry) return null;
-    const typ=feature?.properties?._type;
+    if(!feature || !feature.geometry) return null;
+    const propsRef=(feature && feature.properties) ? feature.properties : {};
+    const typ=propsRef._type;
     try{
       if(typ==='line'){
         if(feature.geometry.type==='LineString'){
           const len=turf.length(feature,{units:'kilometers'});
           if(len>0){
             const mid=turf.along(feature,len/2,{units:'kilometers'});
-            if(mid?.geometry?.coordinates) return mid.geometry.coordinates;
+            if(mid && mid.geometry && mid.geometry.coordinates) return mid.geometry.coordinates;
           }
         }
         const center=turf.centerOfMass(feature);
-        if(center?.geometry?.coordinates) return center.geometry.coordinates;
+        if(center && center.geometry && center.geometry.coordinates) return center.geometry.coordinates;
       }else if(typ==='polygon' || typ==='circle'){
         const center=turf.centerOfMass(feature);
-        if(center?.geometry?.coordinates) return center.geometry.coordinates;
+        if(center && center.geometry && center.geometry.coordinates) return center.geometry.coordinates;
       }
     }catch(err){ console.warn('label coordinate error', err); }
     if(feature.geometry.type==='Point' && Array.isArray(feature.geometry.coordinates)){
@@ -1156,19 +1187,21 @@ input[type="number"]{ width:70px; }
     if(feature.geometry.type==='LineString' && Array.isArray(feature.geometry.coordinates) && feature.geometry.coordinates.length){
       return feature.geometry.coordinates[Math.floor(feature.geometry.coordinates.length/2)];
     }
-    if((feature.geometry.type==='Polygon' || feature.geometry.type==='MultiLineString') && Array.isArray(feature.geometry.coordinates?.[0]) && feature.geometry.coordinates[0].length){
-      return feature.geometry.coordinates[0][0];
+    const firstRing=(feature.geometry.coordinates && feature.geometry.coordinates[0]) || null;
+    if((feature.geometry.type==='Polygon' || feature.geometry.type==='MultiLineString') && Array.isArray(firstRing) && firstRing.length){
+      return firstRing[0];
     }
     return null;
   }
 
   function buildLabelFeature(feature){
-    const typ=feature?.properties?._type;
+    const props=(feature && feature.properties) ? feature.properties : {};
+    const typ=props._type;
     if(!typ || typ==='point') return null;
-    const props=feature.properties||{};
-    const labelColor=props.labelColor || (STYLE_DEFAULTS[typ]?.labelColor ?? '#000000');
+    const defaults=STYLE_DEFAULTS[typ] || {};
+    const labelColor=props.labelColor || (defaults.labelColor != null ? defaults.labelColor : '#000000');
     const rawSize=Number(props.labelSize);
-    const labelSize=Number.isFinite(rawSize) ? rawSize : (STYLE_DEFAULTS[typ]?.labelSize ?? 12);
+    const labelSize=Number.isFinite(rawSize) ? rawSize : ((defaults.labelSize != null ? defaults.labelSize : 12));
     let labelText='';
     if(typ==='polygon'){
       const line1=(props.label1||'').trim();
@@ -1198,7 +1231,7 @@ input[type="number"]{ width:70px; }
 
   function buildUserLabelCollection(fc=window.userFC){
     const features=[];
-    if(fc?.features?.length){
+    if(fc && fc.features && fc.features.length){
       fc.features.forEach(f=>{
         try{
           ensureDefaultStyle(f);
@@ -1212,8 +1245,11 @@ input[type="number"]{ width:70px; }
 
   function syncUserLabelSource(){
     window.userLabelFC=buildUserLabelCollection();
-    if(map?.getSource('user-labels')){
-      map.getSource('user-labels').setData(window.userLabelFC);
+    if(map && typeof map.getSource==='function'){
+      const userLabelSrc=map.getSource('user-labels');
+      if(userLabelSrc && typeof userLabelSrc.setData==='function'){
+        userLabelSrc.setData(window.userLabelFC);
+      }
     }
   }
 
@@ -1224,14 +1260,16 @@ input[type="number"]{ width:70px; }
   let polygonIsNew=false;
   let polygonPreviewFeature=null;
   function showPolygonPreview(feature){
-    if(!feature?.geometry) return;
+    if(!feature || !feature.geometry) return;
     polygonPreviewFeature=feature;
     try{
-      const src=map?.getSource?.('user-temp');
-      if(src){
-        src.setData({ type:'FeatureCollection', features:[feature] });
+      if(map && typeof map.getSource==='function'){
+        const src=map.getSource('user-temp');
+        if(src && typeof src.setData==='function'){
+          src.setData({ type:'FeatureCollection', features:[feature] });
+        }
       }
-      if(map?.getLayer?.('user-temp-fill')){
+      if(map && typeof map.getLayer==='function' && map.getLayer('user-temp-fill')){
         map.setLayoutProperty('user-temp-fill','visibility','visible');
       }
     }catch(err){ console.warn('showPolygonPreview', err); }
@@ -1240,11 +1278,13 @@ input[type="number"]{ width:70px; }
     if(!polygonPreviewFeature) return;
     polygonPreviewFeature=null;
     try{
-      const src=map?.getSource?.('user-temp');
-      if(src){
-        src.setData({ type:'FeatureCollection', features:[] });
+      if(map && typeof map.getSource==='function'){
+        const src=map.getSource('user-temp');
+        if(src && typeof src.setData==='function'){
+          src.setData({ type:'FeatureCollection', features:[] });
+        }
       }
-      if(map?.getLayer?.('user-temp-fill')){
+      if(map && typeof map.getLayer==='function' && map.getLayer('user-temp-fill')){
         const vis=(addMode==='polygon'||addMode==='circle')?'visible':'none';
         map.setLayoutProperty('user-temp-fill','visibility',vis);
       }
@@ -1297,8 +1337,14 @@ input[type="number"]{ width:70px; }
     polygonResumeMode=null;
     if(typeof updateMapCursor==='function') updateMapCursor();
   }
-  $('polyLabelConfirm')?.addEventListener('click',()=>closePolygonLabel(true));
-  $('polyLabelCancel')?.addEventListener('click',()=>closePolygonLabel(false));
+  const polyLabelConfirmBtn=$('polyLabelConfirm');
+  if(polyLabelConfirmBtn){
+    polyLabelConfirmBtn.addEventListener('click',()=>closePolygonLabel(true));
+  }
+  const polyLabelCancelBtn=$('polyLabelCancel');
+  if(polyLabelCancelBtn){
+    polyLabelCancelBtn.addEventListener('click',()=>closePolygonLabel(false));
+  }
   window.openPolygonLabelEditor=openPolygonLabelEditor;
 
   const STORAGE_KEYS={
