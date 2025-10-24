@@ -2471,46 +2471,6 @@ if (map.getLayer(MEDICAL_LAYER_LABEL)) map.setLayoutProperty(MEDICAL_LAYER_LABEL
     return {type:'FeatureCollection',features:normalized};
   }
 
-  async function fetchMedicalData({ bbox, tiles, z, citiesCsv }){
-  const url = new URL(MEDICAL_PROXY_URL);
-  if (bbox) url.searchParams.set('bbox', bbox.join(','));
-  if (Array.isArray(tiles) && tiles.length) {
-    url.searchParams.set('tiles', tiles.join(','));
-  }
-  if (z) url.searchParams.set('z', String(z));
-  if (citiesCsv) url.searchParams.set('city', citiesCsv);
-
-  const res = await fetch(url.toString(), {
-    method: 'GET',
-    mode: 'cors',
-    credentials: 'omit',
-    headers: {
-      'Accept': 'application/json'
-    }
-  });
-  if (!res.ok) throw new Error(`proxy ${res.status}`);
-  const fc = await res.json();
-  return (fc && fc.type === 'FeatureCollection') ? fc : { type:'FeatureCollection', features:[] };
-}
-
-
-  // __supa が無い場合は失敗させる（invoke で呼べないため）
-  if (!window.__supa?.functions?.invoke) {
-    throw new Error('Supabase client not ready (functions.invoke unavailable)');
-  }
-
-  const { data, error } = await window.__supa.functions.invoke('medical-proxy', {
-    body: payload
-  });
-
-  if (error) throw error;
-  if (!data || data.type!=='FeatureCollection') {
-    throw new Error('invalid data from medical-proxy');
-  }
-  return data;
-}
-
-
       let fc=null;
       if(window.__supa?.functions?.invoke){
         try{
