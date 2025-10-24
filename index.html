@@ -549,6 +549,18 @@ input[type="number"]{ width:70px; }
     </div>
 
     <div class="group">
+      <div>医療機関（API）:</div>
+      <div class="layerRow">
+        <label><input type="checkbox" id="chkMedical"> 医療機関</label>
+        <div class="layerActions">
+          <button class="miniBtn" data-layer="medical" data-action="scope">表示範囲</button>
+          <button class="miniBtn" data-layer="medical" data-action="label">ラベル</button>
+        </div>
+      </div>
+      <div id="medicalStatus" class="small" style="margin-left:26px;display:none;color:#64748b"></div>
+    </div>
+
+    <div class="group">
       <div>避難施設（FGB）:</div>
       <div class="layerRow">
         <label><input type="checkbox" id="chkEmergency"> 指定<strong>緊急避難場所</strong>（赤）</label>
@@ -881,8 +893,26 @@ input[type="number"]{ width:70px; }
   const objectDrawer=$('objectDrawer');
   const panelToggleBtn=$('panelToggle');
   const objectToggleBtn=$('objectToggle');
-  const mobilePanelQuery=window.matchMedia('(max-width: 1024px)');
+  const fallbackMediaQuery={
+    matches:false,
+    addEventListener:()=>{},
+    removeEventListener:()=>{},
+    addListener:()=>{},
+    removeListener:()=>{}
+  };
+  const mobilePanelQuery=(()=>{
+    if(typeof window.matchMedia==='function'){
+      try{
+        const query=window.matchMedia('(max-width: 1024px)');
+        return query || fallbackMediaQuery;
+      }catch(err){
+        console.warn('matchMedia initialization failed', err);
+      }
+    }
+    return fallbackMediaQuery;
+  })();
   window.__mobilePanelQuery = mobilePanelQuery;
+  window.__fallbackMobilePanelQuery = fallbackMediaQuery;
   const topbarEl=document.querySelector('.topbar');
 
   (function ensureSingleMedicalLayerEntry(){
@@ -3315,6 +3345,7 @@ const objToolbarBtn=document.getElementById('btnObj');
 const objSubtools=document.getElementById('objSubtools');
 const objToolbar=document.getElementById('objToolbar');
 let lastObjSubtoolsTop=null;
+const FALLBACK_MEDIA_QUERY=(typeof window!=='undefined' && window.__fallbackMobilePanelQuery) || {
 const FALLBACK_MEDIA_QUERY={
   matches:false,
   addEventListener:()=>{},
