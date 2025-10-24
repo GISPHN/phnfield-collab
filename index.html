@@ -495,8 +495,57 @@ input[type="number"]{ width:70px; }
       </div>
       <div style="font-size:12px;color:#6b7280;margin-top:6px">※ハザードのタイルURLを設定していない場合は無効</div>
       <div style="font-size:12px;color:#6b7280;margin-top:4px">凡例（例示画像を必要に応じ差替）</div>
-      <img src="l2_flood_l.png" style="max-width:100%;opacity:.85" alt="凡例(洪水)">
-      <img src="l2_sediment_l.png" style="max-width:100%;opacity:.85" alt="凡例(土砂)">
+<!-- <img src="l2_flood_l.png" style="max-width:100%;opacity:.85" alt="凡例(洪水)"> -->
+<!-- <img src="l2_sediment_l.png" style="max-width:100%;opacity:.85" alt="凡例(土砂)"> -->
+
+    </div>
+
+    <div class="group">
+      <div>医療機関（API）:</div>
+      <div class="layerRow">
+        <label><input type="checkbox" id="chkMedical"> 医療機関</label>
+        <div class="layerActions">
+          <button class="miniBtn" data-layer="medical" data-action="scope">表示範囲</button>
+          <button class="miniBtn" data-layer="medical" data-action="label">ラベル</button>
+        </div>
+      </div>
+      <div id="medicalStatus" class="small" style="margin-left:26px;display:none;color:#64748b"></div>
+    </div>
+
+    <div class="group">
+      <div>医療機関（API）:</div>
+      <div class="layerRow">
+        <label><input type="checkbox" id="chkMedical"> 医療機関</label>
+        <div class="layerActions">
+          <button class="miniBtn" data-layer="medical" data-action="scope">表示範囲</button>
+          <button class="miniBtn" data-layer="medical" data-action="label">ラベル</button>
+        </div>
+      </div>
+      <div id="medicalStatus" class="small" style="margin-left:26px;display:none;color:#64748b"></div>
+    </div>
+
+    <div class="group">
+      <div>医療機関（API）:</div>
+      <div class="layerRow">
+        <label><input type="checkbox" id="chkMedical"> 医療機関</label>
+        <div class="layerActions">
+          <button class="miniBtn" data-layer="medical" data-action="scope">表示範囲</button>
+          <button class="miniBtn" data-layer="medical" data-action="label">ラベル</button>
+        </div>
+      </div>
+      <div id="medicalStatus" class="small" style="margin-left:26px;display:none;color:#64748b"></div>
+    </div>
+
+    <div class="group">
+      <div>医療機関（API）:</div>
+      <div class="layerRow">
+        <label><input type="checkbox" id="chkMedical"> 医療機関</label>
+        <div class="layerActions">
+          <button class="miniBtn" data-layer="medical" data-action="scope">表示範囲</button>
+          <button class="miniBtn" data-layer="medical" data-action="label">ラベル</button>
+        </div>
+      </div>
+      <div id="medicalStatus" class="small" style="margin-left:26px;display:none;color:#64748b"></div>
     </div>
 
     <div class="group">
@@ -684,6 +733,133 @@ input[type="number"]{ width:70px; }
   }
   // ▲▲▲ ここまで置換
   window.__room = new URLSearchParams(location.hash.slice(1)).get('r') || 'default';
+(function(){
+  const STATUS_EL = document.getElementById('medicalStatus');
+  const CHK = document.getElementById('chkMedical');
+
+  // レイヤ/ソースのIDを一元管理
+  const MEDICAL_SOURCE_ID   = 'medical';
+  const MEDICAL_LAYER_POINT = 'med-circle';
+  const MEDICAL_LAYER_LABEL = 'med-label';
+
+  function setStatus(msg, isError=false){
+    if(!STATUS_EL) return;
+    STATUS_EL.style.display = msg ? 'block' : 'none';
+    STATUS_EL.textContent = msg || '';
+    STATUS_EL.style.color = isError ? '#b91c1c' : '#64748b';
+  }
+
+  function waitForMap(timeoutMs=10000){
+    return new Promise((resolve, reject)=>{
+      const start = Date.now();
+      (function poll(){
+        if (window.map && typeof map.getBounds==='function') return resolve(map);
+        if (Date.now()-start > timeoutMs) return reject(new Error('map not ready'));
+        setTimeout(poll, 120);
+      })();
+    });
+  }
+
+  // ---- 医療レイヤの作成/削除/表示 ----
+  function ensureMedicalLayers(){
+    if(!map.getSource(MEDICAL_SOURCE_ID)){
+      map.addSource(MEDICAL_SOURCE_ID, { type:'geojson', data:{type:'FeatureCollection',features:[]} });
+    }
+    if(!map.getLayer(MEDICAL_LAYER_POINT)){
+      map.addLayer({
+        id: MEDICAL_LAYER_POINT, type:'circle', source: MEDICAL_SOURCE_ID,
+        paint:{
+          'circle-radius': 6,
+          'circle-color': '#e11d48',
+          'circle-stroke-color': '#fff',
+          'circle-stroke-width': 1
+        }
+      });
+    }
+    if(!map.getLayer(MEDICAL_LAYER_LABEL)){
+      map.addLayer({
+        id: MEDICAL_LAYER_LABEL, type:'symbol', source: MEDICAL_SOURCE_ID,
+        layout:{
+          'text-field': ['coalesce', ['get','P04_002_ja'], ['get','P04_003_ja'], '' ],
+          'text-size': 12, 'text-offset':[0,1.1], 'text-anchor':'top'
+        },
+        paint:{ 'text-color':'#111827','text-halo-color':'#fff','text-halo-width':1.2 }
+      });
+    }
+  }
+
+  function removeMedicalFromMap(){
+    try{
+      if(map.getLayer(MEDICAL_LAYER_LABEL)) map.removeLayer(MEDICAL_LAYER_LABEL);
+      if(map.getLayer(MEDICAL_LAYER_POINT)) map.removeLayer(MEDICAL_LAYER_POINT);
+      if(map.getSource(MEDICAL_SOURCE_ID))  map.removeSource(MEDICAL_SOURCE_ID);
+    }catch(_){}
+  }
+
+  function showMedicalOnMap(fc){
+    const safe = (fc && fc.type==='FeatureCollection' && Array.isArray(fc.features))
+      ? fc : { type:'FeatureCollection', features:[] };
+    ensureMedicalLayers();
+    map.getSource(MEDICAL_SOURCE_ID).setData(safe);
+    // 可視状態はチェックボックスに同期
+    const vis = (document.getElementById('chkMedical')?.checked) ? 'visible' : 'none';
+    map.setLayoutProperty(MEDICAL_LAYER_POINT, 'visibility', vis);
+    map.setLayoutProperty(MEDICAL_LAYER_LABEL, 'visibility', vis);
+  }
+
+  async function fetchMedicalForMap(){
+    setStatus('医療機関データを読み込み中...');
+    await waitForMap();
+
+    const b = map.getBounds();
+    const bbox = `${b.getWest()},${b.getSouth()},${b.getEast()},${b.getNorth()}`;
+    const z = Math.round(map.getZoom()) || 14;
+
+    // Supabase Edge Functions (HTTP)
+    const fnUrl = (String(SUPABASE_URL||'').replace(/\/$/,'') + '/functions/v1/medical-proxy');
+    const url = `${fnUrl}?bbox=${encodeURIComponent(bbox)}&z=${z}`;
+
+    const res = await fetch(url, { method:'GET' });
+    if(!res.ok){
+      const txt = await res.text().catch(()=>'(no body)');
+      throw new Error(`medical-proxy ${res.status}: ${txt}`);
+    }
+    const fc = await res.json();
+    if(!fc || fc.type!=='FeatureCollection') throw new Error('不正なレスポンス形式');
+
+    showMedicalOnMap(fc);
+    setStatus('');
+    return fc;
+  }
+
+  // チェックボックス操作
+  if(CHK){
+    CHK.addEventListener('change', async ()=>{
+      if(CHK.checked){
+        try{ await fetchMedicalForMap(); }catch(e){ setStatus('読み込みに失敗しました: '+(e.message||e), true); }
+      }else{
+        setStatus('');
+        removeMedicalFromMap();
+      }
+    });
+  }
+
+  // 地図移動で再取得（簡易デバウンス）
+  let _debTimer=null;
+  function onMapMoveEnd(){
+    if(!CHK || !CHK.checked) return;
+    if(_debTimer) clearTimeout(_debTimer);
+    _debTimer = setTimeout(()=>{ fetchMedicalForMap().catch(()=>{}); _debTimer=null; }, 600);
+  }
+
+  (async ()=>{
+    try{
+      await waitForMap();
+      map.on('moveend', onMapMoveEnd);
+    }catch(_){}
+  })();
+})();
+
 
   // ユーティリティ
   const $ = (id)=>document.getElementById(id);
@@ -1160,13 +1336,17 @@ input[type="number"]{ width:70px; }
   };
   const BASE_OPACITY = 0.75;
 
+// 陰影（常に一番下） + ベース（少し透過）
+const HILLSHADE_SOURCE = { type:'raster', tiles:["https://cyberjapandata.gsi.go.jp/xyz/hillshademap/{z}/{x}/{y}.png"], tileSize:256, attribution:"© GSI" };
+
 const map = new maplibregl.Map({
   container:'map',
   style:{
     version:8,
     glyphs:'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
-      sources:{ base: BASE_SOURCES.osm },
-      layers:[{id:'base',type:'raster',source:'base',paint:{'raster-opacity':BASE_OPACITY}}]
+    sources:{
+      hillshade: HILLSHADE_SOURCE,
+      base: BASE_SOURCES.osm
     },
     center:[139.767,35.681], zoom:5.2
   });
@@ -1192,17 +1372,43 @@ geoControl.on('geolocate', (pos)=>{
   }
   pulse.setLngLat([longitude, latitude]).addTo(map);
 });
+// スタイルロード後に医療機関レイヤを先に用意
+map.on('load', () => {
+  try {
+    ensureMedicalLayers();
+    updateLayerVisibility(); // チェック状態を反映
+    ensureOverlayOrder();    // ← これを追加
+  } catch(e) { console.warn(e); }
+});
 
-const overlayLayerOrder=[
+// 地図操作で医療機関を再取得
+['moveend','zoomend','dragend'].forEach(ev=>{
+  map.on(ev, () => {
+    if ($('chkMedical')?.checked) window.__medical?.fetch().catch(()=>{});
+  });
+});
+
+// --- 医療レイヤIDを一度だけ定義 ---
+const MEDICAL_SOURCE_ID  = 'medical';
+const MEDICAL_LAYER_POINT = 'med-circle';
+const MEDICAL_LAYER_LABEL = 'med-label';
+
+// --- 表示順（上に行くほど上に描く） ---
+const overlayLayerOrder = [
   'user-temp-fill','user-temp-line',
   'user-poly-fill','user-poly-line','user-line','user-line-label','user-poly-label','user-circle-label',
   'user-point-emoji','user-point-label',
+  MEDICAL_LAYER_POINT, MEDICAL_LAYER_LABEL,
+  'emg-circle','emg-label',
+  'shel-circle','shel-label',
   'survey-track-line','survey-track-points',
   'survey-notes-icon','survey-notes-label'
 ];
+
 function ensureOverlayOrder(){
-  overlayLayerOrder.forEach(id=>{ if(map.getLayer(id)) map.moveLayer(id); });
+  overlayLayerOrder.forEach(id => { if (map.getLayer(id)) map.moveLayer(id); });
 }
+
 
 function ensureSurveyFlagIcon(){
   if(typeof map==='undefined' || !map || typeof map.hasImage!=='function') return;
@@ -1320,24 +1526,37 @@ window.draw = draw;
   const HAZ_SED_SOURCE_IDS=["haz-sed-0","haz-sed-1","haz-sed-2"];
   const HAZ_SED_LAYER_IDS =["haz-sed-0","haz-sed-1","haz-sed-2"];
 
-  function ensureHazardLayers(){
-    const opa=Number($('hazOpacity').value||0.6);
-    if(FLOOD_TILES && !map.getSource(HAZ_FLOOD_SOURCE_ID)){
-      map.addSource(HAZ_FLOOD_SOURCE_ID,{type:'raster',tiles:[FLOOD_TILES],tileSize:256});
-    }
-    if(FLOOD_TILES && !map.getLayer(HAZ_FLOOD_LAYER_ID)){
-      map.addLayer({id:HAZ_FLOOD_LAYER_ID,type:'raster',source:HAZ_FLOOD_SOURCE_ID,paint:{'raster-opacity':opa}});
-    }
-    SEDIMENT_TILES.forEach((url,i)=>{
-      if(!url) return;
-      if(!map.getSource(HAZ_SED_SOURCE_IDS[i])){
-        map.addSource(HAZ_SED_SOURCE_IDS[i],{type:'raster',tiles:[url],tileSize:256});
-      }
-      if(!map.getLayer(HAZ_SED_LAYER_IDS[i])){
-        map.addLayer({id:HAZ_SED_LAYER_IDS[i],type:'raster',source:HAZ_SED_SOURCE_IDS[i],paint:{'raster-opacity':opa}});
-      }
-    });
+// ここは ensureHazardLayers の外（トップレベル）に置いてください
+function ensureHazardLayers(){
+  const opa = Number(document.getElementById('hazOpacity').value || 0.6);
+
+  // 洪水
+  const HAZ_FLOOD_SOURCE_ID = "haz-flood";
+  const HAZ_FLOOD_LAYER_ID  = "haz-flood";
+  if (FLOOD_TILES && !map.getSource(HAZ_FLOOD_SOURCE_ID)) {
+    map.addSource(HAZ_FLOOD_SOURCE_ID, { type:'raster', tiles:[FLOOD_TILES], tileSize:256 });
   }
+  if (FLOOD_TILES && !map.getLayer(HAZ_FLOOD_LAYER_ID)) {
+    map.addLayer({ id:HAZ_FLOOD_LAYER_ID, type:'raster', source:HAZ_FLOOD_SOURCE_ID,
+      paint:{ 'raster-opacity': opa } });
+  }
+
+  // 土砂（3レイヤ）
+  const HAZ_SED_SOURCE_IDS = ["haz-sed-0","haz-sed-1","haz-sed-2"];
+  const HAZ_SED_LAYER_IDS  = ["haz-sed-0","haz-sed-1","haz-sed-2"];
+  SEDIMENT_TILES.forEach((url,i)=>{
+    if(!url) return;
+    if(!map.getSource(HAZ_SED_SOURCE_IDS[i])){
+      map.addSource(HAZ_SED_SOURCE_IDS[i], { type:'raster', tiles:[url], tileSize:256 });
+    }
+    if(!map.getLayer(HAZ_SED_LAYER_IDS[i])){
+      map.addLayer({ id:HAZ_SED_LAYER_IDS[i], type:'raster',
+        source:HAZ_SED_SOURCE_IDS[i],
+        paint:{ 'raster-opacity': opa } });
+    }
+  });
+}
+
   function updateHazard(){
     const opa=Number($('hazOpacity').value||0.6);
     $('hazOpacityVal').textContent=opa.toFixed(2);
@@ -2166,6 +2385,13 @@ async function readFGB_fromURL(url) {
 
 
 function updateLayerVisibility(){
+  // 医療機関
+const medVis = $('chkMedical')?.checked ? 'visible' : 'none';
+if (map.getLayer(MEDICAL_LAYER_POINT)) map.setLayoutProperty(MEDICAL_LAYER_POINT, 'visibility', medVis);
+// ラベルは「ラベル」設定が有効な場合のみ表示したいなら、既存の layerLabelFields.medical を使う
+const medLabelVis = (medVis==='visible' && (layerLabelFields.medical ?? 'P04_002_ja')) ? 'visible' : 'visible';
+if (map.getLayer(MEDICAL_LAYER_LABEL)) map.setLayoutProperty(MEDICAL_LAYER_LABEL, 'visibility', medLabelVis);
+
   const ev = $('chkEmergency').checked ? 'visible' : 'none';
   const sv = $('chkShelter').checked  ? 'visible' : 'none';
   const mv = $('chkMedical')?.checked ? 'visible' : 'none';
@@ -2846,7 +3072,6 @@ function updateLayerVisibility(){
 
       // 都道府県セレクト
       PREFS.forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;$('prefSelect').appendChild(o);});
-      $('prefSelect').addEventListener('change',renderMuniOptions);
 
     // FGB 読み込み
     try{
@@ -2887,6 +3112,7 @@ function updateLayerVisibility(){
         updateSuggest($('qMuni').value);
       }
       window.renderMuniOptions=renderMuniOptions;
+      $('prefSelect').addEventListener('change', renderMuniOptions);
       $('qMuni').addEventListener('input',()=>updateSuggest($('qMuni').value));
       $('qMuni').addEventListener('blur',()=>setTimeout(hideSuggest,150));
       $('qMuni').addEventListener('keydown',(ev)=>{if(ev.key==='Enter'){const val=$('qMuni').value;if(val){updateSuggest(val);}}});
@@ -3120,6 +3346,7 @@ const objSubtools=document.getElementById('objSubtools');
 const objToolbar=document.getElementById('objToolbar');
 let lastObjSubtoolsTop=null;
 const FALLBACK_MEDIA_QUERY=(typeof window!=='undefined' && window.__fallbackMobilePanelQuery) || {
+const FALLBACK_MEDIA_QUERY={
   matches:false,
   addEventListener:()=>{},
   removeEventListener:()=>{},
@@ -4129,6 +4356,143 @@ refreshObjList();
   window.pushFeature = (f)=>{ _push(f); };
   const _rm = window.removeFeature;
   window.removeFeature = (f,opts)=>{ _rm(f,opts); };
+initFGB()                 // 避難施設レイヤの初期化
+  .then(()=>updateLayerVisibility())
+  .catch(e=>console.warn('initFGB failed', e));
+  <script type="module">
+/* ===== app main (module) ===== */
+(async () => {
+  // ==== globals (must be first) ====
+const $ = (id) => document.getElementById(id);
+// 右側パネルやツールバーのレイアウト判定に使うメディアクエリ
+const mobilePanelQuery = window.matchMedia('(max-width: 880px)');
+
+// 医療機関プロキシのURL（あなたの Supabase）
+const MEDICAL_PROXY_URL = 'https://tdoxxwhkvdguyfrofnaw.supabase.co/functions/v1/medical-proxy';
+
+/* === Medical layer: 統一版 === */
+const MEDICAL_SOURCE_ID = 'medical';
+const MEDICAL_LAYER_POINT = 'medical-pt';
+const MEDICAL_LAYER_LABEL = 'medical-label';
+
+function ensureMedicalLayers(){
+  if(!map.getSource(MEDICAL_SOURCE_ID)){
+    map.addSource(MEDICAL_SOURCE_ID,{ type:'geojson', data:{type:'FeatureCollection',features:[]} });
+  }
+  if(!map.getLayer(MEDICAL_LAYER_POINT)){
+    map.addLayer({
+      id: MEDICAL_LAYER_POINT,
+      type: 'circle',
+      source: MEDICAL_SOURCE_ID,
+      layout:{ visibility:'none' },
+      paint:{
+        'circle-radius': 5,
+        // P04_001（種別コード）の値で色分け（例）
+        'circle-color': [
+          'match', ['get','P04_001'],
+          1, '#ef4444',    /* 病院 */
+          2, '#3b82f6',    /* 診療所 */
+          3, '#10b981',    /* 歯科 */
+          /* default */ '#6b7280'
+        ],
+        'circle-stroke-color':'#fff',
+        'circle-stroke-width':1
+      }
+    });
+  }
+  if(!map.getLayer(MEDICAL_LAYER_LABEL)){
+    map.addLayer({
+      id: MEDICAL_LAYER_LABEL,
+      type: 'symbol',
+      source: MEDICAL_SOURCE_ID,
+      layout:{
+        visibility:'none',
+        'text-field': ['coalesce',['get','P04_002_ja'],''], // デフォルトのラベル
+        'text-size': 12,
+        'text-offset':[0,1.1],
+        'text-anchor':'top',
+        'text-allow-overlap': true
+      },
+      paint:{
+        'text-color':'#111827',
+        'text-halo-color':'#fff',
+        'text-halo-width':1.6
+      }
+    });
+  }
+}
+
+function removeMedicalFromMap(){
+  try{
+    if(map.getLayer(MEDICAL_LAYER_LABEL)) map.removeLayer(MEDICAL_LAYER_LABEL);
+    if(map.getLayer(MEDICAL_LAYER_POINT)) map.removeLayer(MEDICAL_LAYER_POINT);
+    if(map.getSource(MEDICAL_SOURCE_ID))  map.removeSource(MEDICAL_SOURCE_ID);
+  }catch(_){}
+}
+
+function setMedicalStatus(text, isErr=false){
+  const s = document.getElementById('medicalStatus');
+  if(!s) return;
+  if(!text){ s.style.display='none'; return; }
+  s.style.display='block';
+  s.textContent = text;
+  s.style.color = isErr ? '#b91c1c' : '#64748b';
+}
+
+// Supabase Edge Function 経由で医療機関を取得
+async function refreshMedicalLayer(){
+  const chk = document.getElementById('chkMedical');
+  if(!chk || !chk.checked) return;
+  setMedicalStatus('医療機関データを読み込み中…');
+
+  try{
+    const b = map.getBounds();
+    const payload = {
+      bbox: [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map(v=>+v.toFixed(6)),
+      z: Math.round(map.getZoom())
+    };
+    if(!window.__supa?.functions?.invoke) throw new Error('Supabase client not ready');
+
+    const { data, error } = await window.__supa.functions.invoke('medical-proxy', { body: payload });
+    if(error) throw error;
+    if(!data || data.type!=='FeatureCollection' || !Array.isArray(data.features)){
+      throw new Error('invalid response');
+    }
+
+    ensureMedicalLayers();
+    map.getSource(MEDICAL_SOURCE_ID).setData(data);
+
+    const vis = chk.checked ? 'visible' : 'none';
+    if(map.getLayer(MEDICAL_LAYER_POINT)) map.setLayoutProperty(MEDICAL_LAYER_POINT,'visibility',vis);
+    if(map.getLayer(MEDICAL_LAYER_LABEL)) map.setLayoutProperty(MEDICAL_LAYER_LABEL,'visibility',vis);
+
+    setMedicalStatus(`表示件数: ${data.features.length.toLocaleString()}件`);
+  }catch(e){
+    console.error('[medical] fetch error', e);
+    setMedicalStatus('読み込みに失敗しました: ' + (e.message||e), true);
+    removeMedicalFromMap();
+  }
+}
+
+// チェックのON/OFFで表示切替
+document.getElementById('chkMedical')?.addEventListener('change', (ev)=>{
+  if(ev.target.checked) refreshMedicalLayer();
+  else removeMedicalFromMap();
+});
+
+// 地図操作後に再取得（負荷を下げるためデバウンス）
+let _medTimer=null;
+['moveend','zoomend','dragend'].forEach(ev=>{
+  map.on(ev, ()=>{
+    if(!document.getElementById('chkMedical')?.checked) return;
+    clearTimeout(_medTimer);
+    _medTimer = setTimeout(refreshMedicalLayer, 500);
+  });
+});
+/* === /Medical layer === */
+})();  // end of IIFE
+</script>
+
 </script>
 
 </body>
